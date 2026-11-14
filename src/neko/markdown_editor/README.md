@@ -27,8 +27,8 @@ Add [NekoControls](../../../README.md) to your build -- with `FetchContent` or
 ```cmake
 include(FetchContent)
 FetchContent_Declare(neko_controls
-    URL      https://github.com/fhuber83/NekoControls/archive/refs/tags/v0.1.0.tar.gz
-    URL_HASH SHA256=...)
+    URL      https://github.com/fhuber83/NekoControls/releases/download/v0.1.0/NekoControls-0.1.0.tar.gz
+    URL_HASH SHA256=f8b70ca509f770f9c3d23efd43ee088a0347fc332a1c9ac0d4d832ba75bedb9f)
 FetchContent_MakeAvailable(neko_controls)
 target_link_libraries(myapp PRIVATE neko::markdown_editor)
 ```

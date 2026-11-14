@@ -19,8 +19,8 @@ README is its manual; each header documents its class.
 ```cmake
 include(FetchContent)
 FetchContent_Declare(neko_controls
-    URL      https://github.com/fhuber83/NekoControls/archive/refs/tags/v0.1.0.tar.gz
-    URL_HASH SHA256=...)
+    URL      https://github.com/fhuber83/NekoControls/releases/download/v0.1.0/NekoControls-0.1.0.tar.gz
+    URL_HASH SHA256=f8b70ca509f770f9c3d23efd43ee088a0347fc332a1c9ac0d4d832ba75bedb9f)
 FetchContent_MakeAvailable(neko_controls)
 
 target_link_libraries(myapp PRIVATE neko::markdown_editor)   # or neko::editor, neko::markdown
@@ -72,3 +72,18 @@ lrelease translations/*.ts
   `scripts/generate-emoji-shortcodes.py` from the pinned markdown-it-emoji: run it after
   changing that pin.
 - A new or updated JavaScript library goes into `THIRD_PARTY_NOTICES.txt` too.
+
+## Releasing
+
+Releases are immutable once published, and `v*` tags cannot be moved or deleted: a
+mistake costs a version number. Bump `VERSION` in `CMakeLists.txt`, commit, tag
+`v<version>`, push both, then
+
+```bash
+scripts/make-release.sh <version> --notes "What changed."
+```
+
+It attaches a reproducible `git archive` tarball to a **draft** release and prints its
+SHA-256. Check the draft, then publish it (`gh release edit v<version> --draft=false`).
+Projects pin that tarball (`releases/download/v<version>/NekoControls-<version>.tar.gz`),
+not GitHub's generated source archive, whose bytes are not guaranteed to stay the same.
