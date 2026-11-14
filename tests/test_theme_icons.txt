@@ -1,0 +1,6 @@
+# test_theme's own icons (neko_add_icon_set in CMakeLists.txt); the controls' icons
+# come along by default.
+test-plus=plus
+test-trash=trash
+# Overrides one of the controls' icons.
+close=circle-x

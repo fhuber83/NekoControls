@@ -1,14 +1,15 @@
 # NekoControls
 
 Qt 6 Widgets controls of the Neko family, from [Neko Grid](https://github.com/fhuber83/NekoGrid):
-a text editor and a Markdown editor with a live preview. Three small static libraries, C++23,
-MIT license.
+a text editor, a Markdown editor with a live preview, and the themes, icons and tool bars
+the Neko applications share. Four small static libraries, C++23, MIT license.
 
 | Target | Directory | What it is | Links |
 |---|---|---|---|
 | `neko::editor` | [`src/neko/editor`](src/neko/editor/README.md) | Text editor controls: `CodeEditor` (gutter, column selection, line wrap), `EditorFindBar` (Find / Replace), `MarkdownEditor` (emoji picker), `MarkdownHighlighter`, `MarkdownTableDialog` | Qt Widgets |
 | `neko::markdown` | [`src/neko/markdown`](src/neko/markdown/README.md) | `MarkdownPreview`: Markdown with math, Mermaid diagrams and images, on a hardened Qt WebEngine page; PDF and HTML export | Qt WebEngineWidgets |
 | `neko::markdown_editor` | [`src/neko/markdown_editor`](src/neko/markdown_editor/README.md) | `MarkdownDocumentEditor`: the two together, source and preview side by side, three views, outline | the two above |
+| `neko::theme` | [`src/neko/theme`](src/neko/theme/README.md) | `ThemeManager` (ten palettes, widget styles, restart notice), theme / style menus, `themedIcon()`, `ResponsiveToolBar`; with the CMake function `neko_add_icon_set()` | Qt Widgets + Svg |
 
 None of them reads settings, writes files or knows an application: fonts, icons, the
 language and what a document's links mean come in from the application. Each library's
@@ -19,8 +20,8 @@ README is its manual; each header documents its class.
 ```cmake
 include(FetchContent)
 FetchContent_Declare(neko_controls
-    URL      https://github.com/fhuber83/NekoControls/releases/download/v0.1.0/NekoControls-0.1.0.tar.gz
-    URL_HASH SHA256=f8b70ca509f770f9c3d23efd43ee088a0347fc332a1c9ac0d4d832ba75bedb9f)
+    URL      https://github.com/fhuber83/NekoControls/releases/download/v0.2.0/NekoControls-0.2.0.tar.gz
+    URL_HASH SHA256=...)   # the exact line is in the release notes
 FetchContent_MakeAvailable(neko_controls)
 
 target_link_libraries(myapp PRIVATE neko::markdown_editor)   # or neko::editor, neko::markdown
@@ -33,8 +34,9 @@ target_link_libraries(myapp PRIVATE neko::markdown_editor)   # or neko::editor, 
 To work on NekoControls from inside a project that fetches it, point FetchContent at a
 local clone: `-DFETCHCONTENT_SOURCE_DIR_NEKO_CONTROLS=/path/to/NekoControls`.
 
-Requirements: CMake 3.24, a C++23 compiler, Qt 6 (Core, Gui, Widgets, WebEngineWidgets;
-Test for the tests). Configuring downloads the preview's pinned JavaScript libraries.
+Requirements: CMake 3.24, a C++23 compiler, Qt 6 (Core, Gui, Widgets, WebEngineWidgets, Svg;
+Test for the tests). Configuring downloads the preview's pinned JavaScript libraries, and
+`neko_add_icon_set()` the pinned icon set.
 
 ## Building and testing on its own
 
@@ -45,7 +47,7 @@ QT_QPA_PLATFORM=offscreen ctest --test-dir build --output-on-failure
 ```
 
 `NEKO_CONTROLS_BUILD_TESTS` (on when NekoControls is the top-level project) builds the
-three suites, `test_editor`, `test_markdown` and `test_markdown_editor`. Each links its
+four suites, `test_editor`, `test_markdown`, `test_markdown_editor` and `test_theme`. Each links its
 library alone, which is what proves the library stands on its own.
 
 ## Translations
@@ -56,6 +58,7 @@ checked in. After changing a string, update and release:
 ```bash
 lupdate -locations none -I src src/neko/editor -ts translations/neko_editor_de.ts translations/neko_editor_it.ts
 lupdate -locations none -I src src/neko/markdown_editor -ts translations/neko_markdown_editor_de.ts translations/neko_markdown_editor_it.ts
+lupdate -locations none -I src src/neko/theme -ts translations/neko_theme_de.ts translations/neko_theme_it.ts
 lrelease translations/*.ts
 ```
 
