@@ -1,6 +1,6 @@
 // Editor library test suite: src/editor only.
 //
-// This target links nekogrid_editor alone -- no engine, no UI, no settings, no icon
+// This target links neko_editor alone -- no engine, no UI, no settings, no icon
 // files. That keeps the library usable by other projects: if src/editor ever includes
 // src/core or src/ui, this binary stops linking. It is also the whole test of the
 // library, so it can be taken along with it; it needs nothing from tests/.
@@ -8,17 +8,18 @@
 // How Neko Grid uses the controls (the SQL tab's editor and bar, the note tab, the
 // font from Settings, the icon set) is tested in tests/test_ui.cpp.
 
-#include "editor/block_selection.hpp"
-#include "editor/code_editor.hpp"
-#include "editor/editor_defaults.hpp"
-#include "editor/editor_find_bar.hpp"
-#include "editor/editor_icons.hpp"
-#include "editor/emoji_shortcodes.hpp"
-#include "editor/markdown_editor.hpp"
-#include "editor/markdown_highlighter.hpp"
-#include "editor/markdown_table.hpp"
-#include "editor/markdown_table_dialog.hpp"
-#include "editor/text_search.hpp"
+#include "neko/editor/block_selection.hpp"
+#include "neko/editor/code_editor.hpp"
+#include "neko/editor/editor_defaults.hpp"
+#include "neko/editor/editor_find_bar.hpp"
+#include "neko/editor/editor_icons.hpp"
+#include "neko/editor/editor_translations.hpp"
+#include "neko/editor/emoji_shortcodes.hpp"
+#include "neko/editor/markdown_editor.hpp"
+#include "neko/editor/markdown_highlighter.hpp"
+#include "neko/editor/markdown_table.hpp"
+#include "neko/editor/markdown_table_dialog.hpp"
+#include "neko/editor/text_search.hpp"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -43,6 +44,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QToolButton>
+#include <QTranslator>
 #include <QVBoxLayout>
 #include <QtTest>
 
@@ -50,7 +52,7 @@
 #include <vector>
 
 // `ed`, not `editor`: the tests call their editor widgets `editor`.
-namespace ed = nekogrid::editor;
+namespace ed = neko::editor;
 
 class TestEditor final : public QObject {
     Q_OBJECT
@@ -273,7 +275,7 @@ private slots:
 
         // Exact, then starts with, then a word starting with it, then contains it -- and
         // nothing is left out.
-        for (const QString prefix : {QStringLiteral("cat"), QStringLiteral("ok"), QStringLiteral("face")}) {
+        for (const QString& prefix : {QStringLiteral("cat"), QStringLiteral("ok"), QStringLiteral("face")}) {
             const QStringList found = names(prefix);
             int lastTier = 0;
             for (const QString& name : found) {
@@ -1007,6 +1009,31 @@ private slots:
         QCOMPARE(bar->statusText(), QStringLiteral("1 of 3"));
         bar->findChild<QToolButton*>(QStringLiteral("FindClose"))->click();
         QVERIFY(!bar->isVisible());
+    }
+
+    // The library carries its own translations; the application picks the language.
+    void testEditorTranslations() {
+        QCOMPARE(
+            ed::editorTranslationLanguages(),
+            (QStringList{QStringLiteral("de"), QStringLiteral("bar"), QStringLiteral("it")}));
+        QTranslator unknown;
+        QVERIFY(!ed::loadEditorTranslation(unknown, QStringLiteral("en")));
+        QVERIFY(!ed::loadEditorTranslation(unknown, QStringLiteral("xx")));
+        QVERIFY(unknown.isEmpty());
+
+        for (const QString& code : ed::editorTranslationLanguages()) {
+            QTranslator translator;
+            QVERIFY2(ed::loadEditorTranslation(translator, code), qPrintable(code));
+            QVERIFY(!translator.isEmpty());
+        }
+
+        QTranslator german;
+        QVERIFY(ed::loadEditorTranslation(german, QStringLiteral("de")));
+        QCoreApplication::installTranslator(&german);
+        const auto uninstall = qScopeGuard([&german] { QCoreApplication::removeTranslator(&german); });
+        QPlainTextEdit target;
+        const ed::EditorFindBar bar(&target, [](const QList<QTextEdit::ExtraSelection>&) {});
+        QCOMPARE(bar.findField()->placeholderText(), QStringLiteral("Suchen"));
     }
 };
 

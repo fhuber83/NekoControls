@@ -1,6 +1,6 @@
 // Markdown preview library test suite: src/markdown only.
 //
-// This target links nekogrid_markdown alone -- no engine, no UI, no editor library.
+// This target links neko_markdown alone -- no engine, no UI, no editor library.
 // That keeps the library usable by other projects: if src/markdown ever includes
 // src/core or src/ui, this binary stops linking. It is also the whole test of the
 // library, so it can be taken along with it; it needs nothing from tests/.
@@ -9,8 +9,8 @@
 // preview (a note's front matter as chips, `db:` links, the ER diagrams) is tested in
 // tests/test_ui.cpp.
 
-#include "markdown/markdown_page.hpp"
-#include "markdown/markdown_preview.hpp"
+#include "neko/markdown/markdown_page.hpp"
+#include "neko/markdown/markdown_preview.hpp"
 
 #include <QApplication>
 #include <QDir>
@@ -25,7 +25,7 @@
 
 #include <memory>
 
-namespace md = nekogrid::markdown;
+namespace md = neko::markdown;
 
 namespace {
 
@@ -95,7 +95,7 @@ private slots:
         QVERIFY(md::MarkdownPage::isCustomLinkScheme(QStringLiteral("x-app+v1.2")));
         // What the page handles itself cannot be taken over, in any case.
         for (const char* own :
-             {"http", "https", "HTTPS", "mailto", "file", "qrc", "data", "blob", "javascript", "nekogrid-note"}) {
+             {"http", "https", "HTTPS", "mailto", "file", "qrc", "data", "blob", "javascript", "neko-note"}) {
             QVERIFY2(!md::MarkdownPage::isCustomLinkScheme(QString::fromLatin1(own)), own);
         }
         // Not scheme names at all.
@@ -103,10 +103,10 @@ private slots:
             QVERIFY2(!md::MarkdownPage::isCustomLinkScheme(QString::fromLatin1(bad)), bad);
         }
 
-        QCOMPARE(md::MarkdownPage::pageUrl(), QUrl(QStringLiteral("qrc:/markdown/preview.html")));
+        QCOMPARE(md::MarkdownPage::pageUrl(), QUrl(QStringLiteral("qrc:/neko/markdown/preview.html")));
         const QString file = QDir::tempPath() + QStringLiteral("/a dir/pic.png");
         QUrl url;
-        url.setScheme(QStringLiteral("nekogrid-note"));
+        url.setScheme(QStringLiteral("neko-note"));
         url.setPath(QUrl::fromLocalFile(file).path());
         QCOMPARE(md::MarkdownPage::localPathOf(url), QDir::cleanPath(file));
         QCOMPARE(md::MarkdownPage::localPathOf(QUrl(QStringLiteral("https://example.org/pic.png"))), QString());
@@ -342,7 +342,7 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(exported, kRenderTimeoutMs);
 
         QVERIFY(html.contains(QStringLiteral("Report")));
-        QVERIFY2(html.contains(QStringLiteral("nekogrid-export:0")), qPrintable(html.left(400)));
+        QVERIFY2(html.contains(QStringLiteral("neko-export:0")), qPrintable(html.left(400)));
         QCOMPARE(images.size(), 1);
         QVERIFY(images.front().png.startsWith(QByteArrayLiteral("\x89PNG")));
         QVERIFY(images.front().svg.contains(QByteArrayLiteral("<svg")));
@@ -359,7 +359,7 @@ int main(int argc, char* argv[]) {
     }
     // What every application using the preview does before its QApplication exists.
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-    nekogrid::markdown::registerMarkdownPreviewScheme();
+    neko::markdown::registerMarkdownPreviewScheme();
     QApplication app(argc, argv);
     TestMarkdown testObject;
     QTEST_SET_MAIN_SOURCE_PATH

@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- The Markdown preview page. Loaded once per markdown::MarkdownPage from
+     qrc:/neko/markdown/; the page object then calls nekoRender() and
+     nekoScrollToLine() in preview.js. Nothing here loads from the network. -->
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src qrc: 'unsafe-inline'; style-src qrc: 'unsafe-inline'; img-src qrc: neko-note: data: blob:; font-src qrc: data:">
+<base href="qrc:/neko/markdown/">
+<link rel="stylesheet" href="qrc:/neko/markdown/preview.css">
+<script>
+try {
+    if (!window.localStorage) {
+        window.localStorage = {
+            getItem: function() { return null; },
+            setItem: function() {},
+            removeItem: function() {},
+            clear: function() {}
+        };
+    }
+} catch (e) {}
+window.MathJax = {
+    startup: { typeset: false },
+    svg: { fontCache: 'local' }
+};
+</script>
+<script src="qrc:/neko/markdown/vendor/markdown-it.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/markdown-it-sub.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/markdown-it-sup.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/markdown-it-footnote.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/markdown-it-deflist.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/markdown-it-emoji.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/katex.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/mermaid.min.js"></script>
+<script src="qrc:/neko/markdown/vendor/tex-svg.js"></script>
+<script src="qrc:/neko/markdown/preview.js"></script>
+</head>
+<body>
+<div id="meta"></div>
+<main id="content"></main>
+</body>
+</html>

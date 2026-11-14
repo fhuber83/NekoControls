@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- This library's translations (editor_translations.cpp). Edit the .ts files in
+         translations/, then run lrelease and commit the .qm files. -->
+    <qresource prefix="/neko/i18n">
+        <file alias="neko_editor_de.qm">../../../translations/neko_editor_de.qm</file>
+        <file alias="neko_editor_bar.qm">../../../translations/neko_editor_bar.qm</file>
+        <file alias="neko_editor_it.qm">../../../translations/neko_editor_it.qm</file>
+    </qresource>
+</RCC>

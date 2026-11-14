@@ -1,7 +1,7 @@
 // Markdown document editor library test suite: src/markdown_editor only.
 //
-// This target links nekogrid_markdown_editor alone -- and with it the two libraries it
-// is made of, nekogrid_editor and nekogrid_markdown -- no engine, no UI. That keeps the
+// This target links neko_markdown_editor alone -- and with it the two libraries it
+// is made of, neko_editor and neko_markdown -- no engine, no UI. That keeps the
 // library usable by other projects: if src/markdown_editor ever includes src/core or
 // src/ui, this binary stops linking. It is also the whole test of the library, so it
 // can be taken along with it; it needs nothing from tests/.
@@ -11,13 +11,14 @@
 // Neko Grid makes of the widget -- a note tab with a file, Note Info, export -- in
 // tests/test_ui.cpp.
 
-#include "editor/editor_find_bar.hpp"
-#include "editor/editor_icons.hpp"
-#include "editor/markdown_editor.hpp"
-#include "markdown/markdown_preview.hpp"
-#include "markdown_editor/markdown_document_editor.hpp"
-#include "markdown_editor/markdown_outline.hpp"
-#include "markdown_editor/markdown_structure.hpp"
+#include "neko/editor/editor_find_bar.hpp"
+#include "neko/editor/editor_icons.hpp"
+#include "neko/editor/markdown_editor.hpp"
+#include "neko/markdown/markdown_preview.hpp"
+#include "neko/markdown_editor/markdown_document_editor.hpp"
+#include "neko/markdown_editor/markdown_editor_translations.hpp"
+#include "neko/markdown_editor/markdown_outline.hpp"
+#include "neko/markdown_editor/markdown_structure.hpp"
 
 #include <QAction>
 #include <QApplication>
@@ -30,16 +31,17 @@
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QToolBar>
+#include <QTranslator>
 #include <QTreeWidget>
 #include <QWebEnginePage>
 #include <QWebEngineView>
 #include <QtTest>
 
-namespace mde = nekogrid::markdown_editor;
-namespace md = nekogrid::markdown;
-namespace ed = nekogrid::editor;
+namespace mde = neko::markdown_editor;
+namespace md = neko::markdown;
+namespace ed = neko::editor;
 
-Q_DECLARE_METATYPE(nekogrid::markdown_editor::MarkdownViewMode)
+Q_DECLARE_METATYPE(neko::markdown_editor::MarkdownViewMode)
 
 namespace {
 
@@ -643,6 +645,25 @@ private slots:
         const QString after = evalJs(view->page(), QStringLiteral("document.body.innerText")).toString();
         QVERIFY2(after.contains(QStringLiteral("Typed later.")), qPrintable(after));
     }
+
+    // The library carries its own translations; the application picks the language.
+    void testMarkdownEditorTranslations() {
+        QTranslator unknown;
+        QVERIFY(!mde::loadMarkdownEditorTranslation(unknown, QStringLiteral("en")));
+        QVERIFY(unknown.isEmpty());
+        for (const QString& code : mde::markdownEditorTranslationLanguages()) {
+            QTranslator translator;
+            QVERIFY2(mde::loadMarkdownEditorTranslation(translator, code), qPrintable(code));
+        }
+
+        QTranslator german;
+        QVERIFY(mde::loadMarkdownEditorTranslation(german, QStringLiteral("de")));
+        QCoreApplication::installTranslator(&german);
+        const auto uninstall = qScopeGuard([&german] { QCoreApplication::removeTranslator(&german); });
+        const mde::MarkdownDocumentEditor doc;
+        QCOMPARE(doc.sourceAction()->text(), QStringLiteral("Quelltext"));
+        QCOMPARE(doc.splitAction()->text(), QStringLiteral("Geteilt"));
+    }
 };
 
 int main(int argc, char* argv[]) {
@@ -654,7 +675,7 @@ int main(int argc, char* argv[]) {
     }
     // What every application using the preview does before its QApplication exists.
     QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
-    nekogrid::markdown::registerMarkdownPreviewScheme();
+    neko::markdown::registerMarkdownPreviewScheme();
     QApplication app(argc, argv);
     TestMarkdownEditor testObject;
     QTEST_SET_MAIN_SOURCE_PATH
