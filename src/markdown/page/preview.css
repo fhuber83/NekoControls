@@ -1,0 +1,94 @@
+/* The Markdown preview's look. Colours follow the application's palette: preview.js
+   sets data-theme="dark" on <html> when that palette is dark. */
+:root {
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --border: #d1d9e0;
+    --code-bg: #f6f8fa;
+    --link: #0969da;
+    --object: #8250df;
+    --error: #cf222e;
+}
+:root[data-theme="dark"] {
+    --bg: #1e1f22;
+    --fg: #e6edf3;
+    --muted: #9198a1;
+    --border: #3d444d;
+    --code-bg: #2b2d31;
+    --link: #4493f8;
+    --object: #d2a8ff;
+    --error: #ff7b72;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body {
+    margin: 0;
+    padding: 12px 18px 40px;
+    font: 14px/1.55 system-ui, -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    word-wrap: break-word;
+}
+h1, h2 { border-bottom: 1px solid var(--border); padding-bottom: .25em; }
+h1, h2, h3, h4, h5, h6 { margin: 1.2em 0 .5em; line-height: 1.25; }
+#content > :first-child { margin-top: 0; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+/* A link of one of the application's own schemes (payload.linkSchemes), with its marker. */
+a.custom-link { color: var(--object); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+a.custom-link[data-marker]::before { content: attr(data-marker); font-family: system-ui, sans-serif; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: .9em; }
+:not(pre) > code { background: var(--code-bg); padding: .15em .35em; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 10px 12px; border-radius: 6px; overflow: auto; }
+blockquote { margin: 0; padding: 0 1em; color: var(--muted); border-left: .25em solid var(--border); }
+table { border-collapse: collapse; margin: .5em 0; display: block; overflow: auto; }
+th, td { border: 1px solid var(--border); padding: 4px 10px; }
+th { background: var(--code-bg); }
+img { max-width: 100%; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.mermaid-block { margin: .8em 0; overflow: auto; text-align: center; }
+.mermaid-block svg { max-width: 100%; height: auto; }
+.mermaid-error { color: var(--error); background: var(--code-bg); text-align: left; white-space: pre-wrap; }
+.mermaid-error::before { content: "Mermaid: "; font-weight: bold; }
+dl { margin: .8em 0; }
+dt { font-weight: 600; margin-top: .6em; }
+dd { margin-left: 1.5em; margin-bottom: .4em; }
+.footnotes { font-size: .88em; color: var(--muted); margin-top: 2em; }
+.footnotes hr.footnotes-sep { margin: 1em 0; }
+.footnote-ref { font-size: .75em; vertical-align: super; line-height: 0; }
+.footnote-backref { text-decoration: none; }
+.table-of-contents {
+    margin: .8em 0 1.2em;
+    padding: .6em 1em;
+    border-left: 3px solid var(--border);
+    background: var(--code-bg);
+    border-radius: 0 6px 6px 0;
+    font-size: .94em;
+}
+.table-of-contents:empty { display: none; }
+.table-of-contents ul { margin: .2em 0; padding-left: 1.3em; list-style-type: disc; }
+.table-of-contents > ul { margin: 0; padding-left: 1.1em; }
+.table-of-contents li { margin: .15em 0; }
+.katex { font-size: 1.05em; }
+.katex-display {
+    display: block;
+    margin: 1em 0;
+    padding: 0.5em 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+}
+.katex-display > .katex { display: inline-block; }
+.katex-error { color: var(--error); background: var(--code-bg); padding: 2px 4px; border-radius: 3px; font-family: ui-monospace, monospace; font-size: .9em; }
+#meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; color: var(--muted); font-size: 12px; }
+#meta:empty { display: none; }
+#meta .chip { border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+#meta .chip b { font-weight: 600; color: var(--fg); }
+#meta .chip.dashed { border-style: dashed; }
+
+/* PDF export (printToPdf): no chips, no link markers, nothing cut across a page break. */
+@media print {
+    body { padding: 0; }
+    #meta { display: none; }
+    a.custom-link[data-marker]::before { content: none; }
+    pre, table, img, .mermaid-block { break-inside: avoid; }
+    pre { white-space: pre-wrap; }
+}

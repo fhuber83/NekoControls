@@ -1,0 +1,19 @@
+<RCC>
+    <!-- The Markdown preview (markdown_page.cpp): its page from page/ and the pinned
+         markdown-it, KaTeX, Mermaid and MathJax builds CMakeLists.txt downloads.
+         Generated into the build directory by configure_file(); edit this template. -->
+    <qresource prefix="/markdown">
+        <file alias="preview.html">@NEKOGRID_MARKDOWN_PAGE_DIR@/preview.html</file>
+        <file alias="preview.css">@NEKOGRID_MARKDOWN_PAGE_DIR@/preview.css</file>
+        <file alias="preview.js">@NEKOGRID_MARKDOWN_PAGE_DIR@/preview.js</file>
+        <file alias="vendor/markdown-it.min.js">@NEKOGRID_MARKDOWN_IT_JS@</file>
+        <file alias="vendor/markdown-it-sub.min.js">@NEKOGRID_MARKDOWN_IT_SUB_JS@</file>
+        <file alias="vendor/markdown-it-sup.min.js">@NEKOGRID_MARKDOWN_IT_SUP_JS@</file>
+        <file alias="vendor/markdown-it-footnote.min.js">@NEKOGRID_MARKDOWN_IT_FOOTNOTE_JS@</file>
+        <file alias="vendor/markdown-it-deflist.min.js">@NEKOGRID_MARKDOWN_IT_DEFLIST_JS@</file>
+        <file alias="vendor/markdown-it-emoji.min.js">@NEKOGRID_MARKDOWN_IT_EMOJI_JS@</file>
+        <file alias="vendor/katex.min.js">@NEKOGRID_KATEX_JS@</file>
+        <file alias="vendor/mermaid.min.js">@NEKOGRID_MERMAID_JS@</file>
+        <file alias="vendor/tex-svg.js">@NEKOGRID_MATHJAX_JS@</file>
+    </qresource>
+</RCC>

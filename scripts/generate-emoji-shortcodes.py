@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates src/core/emoji_shortcodes_data.inc, the note editor's emoji picker list.
+"""Generates src/editor/emoji_shortcodes_data.inc, the note editor's emoji picker list.
 
 The list is taken from the markdown-it-emoji build the Markdown preview renders with
 (pinned in CMakeLists.txt, downloaded by FetchContent), so every shortcode the picker
@@ -22,7 +22,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = ROOT / "build/_deps/nekogrid_markdown_it_emoji-src/markdown-it-emoji.min.js"
-OUTPUT = ROOT / "src/core/emoji_shortcodes_data.inc"
+OUTPUT = ROOT / "src/editor/emoji_shortcodes_data.inc"
 
 # One `key:"value"` pair of the bundle's definitions object. Keys are bare identifiers,
 # numbers (100, 1234) or quoted ("+1", "-1"); values are JS strings of \u escapes.
