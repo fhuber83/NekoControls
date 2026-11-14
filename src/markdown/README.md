@@ -27,6 +27,10 @@ unknown scheme goes nowhere. The page keeps no cache, cookies or storage on disk
 Everything is in the namespace `nekogrid::markdown`. Each header documents its class;
 that is the reference.
 
+For the preview beside an editor of its source -- one widget with both, view modes and
+an outline -- see [`nekogrid_markdown_editor`](../markdown_editor/README.md), which
+builds on this library and on the [text editor](../editor/README.md).
+
 ## Using it
 
 Copy this directory (or add the repository as a submodule) and add it to your build:

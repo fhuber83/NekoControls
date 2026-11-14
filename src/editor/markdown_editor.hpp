@@ -11,8 +11,8 @@ namespace nekogrid::editor {
 
 class EmojiShortcodeModel;
 
-/// A source editor for Markdown (Neko Grid's ui::MarkdownTab): a CodeEditor with an
-/// emoji picker.
+/// A source editor for Markdown (the one in markdown_editor::MarkdownDocumentEditor,
+/// and so in Neko Grid's note tabs): a CodeEditor with an emoji picker.
 ///
 /// Typing a ':' that begins a word (emojiShortcodeQueryAt: not in "10:30", not in
 /// code) opens a list of every GitHub emoji shortcode the preview renders

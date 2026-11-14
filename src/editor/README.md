@@ -20,6 +20,11 @@ class; that is the reference.
 
 Everything is in the namespace `nekogrid::editor`.
 
+For a whole Markdown document editor -- this library's `MarkdownEditor` beside a
+rendered preview, with an outline and a tool bar -- see
+[`nekogrid_markdown_editor`](../markdown_editor/README.md), which builds on this
+library and on the [preview](../markdown/README.md).
+
 ## Using it
 
 Copy this directory (or add the repository as a submodule) and add it to your build:
