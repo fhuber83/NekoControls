@@ -3,7 +3,7 @@
 // answers in two ways: document.title becomes "rendered:<n>" when a render has
 // finished (Mermaid diagrams included), and a clicked link of one of the application's
 // own schemes, or a link to another Markdown file, is reported as a console message
-// "neko:custom-link <href>" / "neko:document-link <url>", which the page object
+// "neko:custom-link <href>" / "neko:local-link <href>" / "neko:document-link <url>", which the page object
 // reads (no QWebChannel needed for two messages).
 //
 // Raw HTML in a document is off (markdown-it `html: false`) and Mermaid runs with
@@ -717,8 +717,15 @@
             }
         } else if (customSchemeOf(href) !== null) {
             console.info('neko:custom-link ' + href);
-        } else if (/^neko-note:/i.test(a.href) && /\.(md|markdown)$/i.test(a.pathname)) {
-            console.info('neko:document-link ' + a.href);
+        } else {
+            // A link without a scheme (or a Windows drive path) is a local file: the
+            // application decides what it may open, from the link as written.
+            if (href !== '' && (!/^[a-z][a-z0-9+.-]*:/i.test(href) || /^[a-z]:[\\/]/i.test(href))) {
+                console.info('neko:local-link ' + href);
+            }
+            if (/^neko-note:/i.test(a.href) && /\.(md|markdown)$/i.test(a.pathname)) {
+                console.info('neko:document-link ' + a.href);
+            }
         }
     });
 })();

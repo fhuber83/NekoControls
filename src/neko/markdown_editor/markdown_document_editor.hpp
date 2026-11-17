@@ -72,8 +72,9 @@ defaultMarkdownContent(const QString& text, const QString& baseDirectory = {});
 /// gets is built by the content provider -- defaultMarkdownContent() unless
 /// setContentProvider() replaced it, which is how an application adds chips, a title
 /// or its own link schemes. In Split the preview scrolls with the source. A click on
-/// one of the content's link schemes comes out as customLinkActivated(), a link to
-/// another Markdown file as documentLinkActivated().
+/// one of the content's link schemes comes out as customLinkActivated(), a link
+/// without a scheme as localLinkActivated(), a link to another Markdown file (also) as
+/// documentLinkActivated().
 ///
 /// **Outline.** Hidden until outlineAction() is checked; it follows the source after
 /// kOutlineDelayMs of quiet. A click on a heading moves the source's cursor there and
@@ -191,6 +192,9 @@ signals:
     /// A link to another Markdown file was clicked in the preview
     /// (markdown::MarkdownPreview::documentLinkActivated).
     void documentLinkActivated(const QString& path);
+    /// A link without a scheme was clicked in the preview, as written
+    /// (markdown::MarkdownPreview::localLinkActivated).
+    void localLinkActivated(const QString& link);
 
 protected:
     void changeEvent(QEvent* event) override;

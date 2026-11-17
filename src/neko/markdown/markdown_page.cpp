@@ -296,6 +296,10 @@ void MarkdownPage::javaScriptConsoleMessage(
             emit customLinkActivated(message.mid(QLatin1String("neko:custom-link ").size()));
             return;
         }
+        if (message.startsWith(QLatin1String("neko:local-link "))) {
+            emit localLinkActivated(message.mid(QLatin1String("neko:local-link ").size()));
+            return;
+        }
         if (message.startsWith(QLatin1String("neko:document-link "))) {
             emit documentLinkActivated(localPathOf(QUrl(message.mid(QLatin1String("neko:document-link ").size()))));
             return;

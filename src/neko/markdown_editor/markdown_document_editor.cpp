@@ -184,6 +184,8 @@ MarkdownDocumentEditor::MarkdownDocumentEditor(MarkdownToolBar toolBar, QWidget*
         &markdown::MarkdownPreview::documentLinkActivated,
         this,
         &MarkdownDocumentEditor::documentLinkActivated);
+    connect(
+        preview_, &markdown::MarkdownPreview::localLinkActivated, this, &MarkdownDocumentEditor::localLinkActivated);
 
     // Nothing is rendered yet: an empty document has nothing to show, and whoever
     // builds the widget usually sets a provider, a view and a text next.

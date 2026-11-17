@@ -474,6 +474,10 @@ private slots:
         // The preview's link signals come out of the widget.
         QSignalSpy custom(&doc, &mde::MarkdownDocumentEditor::customLinkActivated);
         QSignalSpy other(&doc, &mde::MarkdownDocumentEditor::documentLinkActivated);
+        QSignalSpy local(&doc, &mde::MarkdownDocumentEditor::localLinkActivated);
+        emit doc.preview()->localLinkActivated(QStringLiteral("other.md"));
+        QCOMPARE(local.size(), 1);
+        QCOMPARE(local.at(0).at(0).toString(), QStringLiteral("other.md"));
         emit doc.preview()->customLinkActivated(QStringLiteral("issue:42"));
         emit doc.preview()->documentLinkActivated(QStringLiteral("/elsewhere/other.md"));
         QCOMPARE(custom.size(), 1);

@@ -197,17 +197,20 @@ private slots:
         QCOMPARE(f.count(QStringLiteral(".mermaid-error")), 1);
     }
 
-    /// Links: the application's schemes come out as customLinkActivated(), links to
-    /// other Markdown files as documentLinkActivated(), and nothing else goes anywhere.
+    /// Links: the application's schemes come out as customLinkActivated(), links without
+    /// a scheme as localLinkActivated() (as written), links to other Markdown files also
+    /// as documentLinkActivated(), and nothing else goes anywhere.
     void testLinksAndCustomSchemes() {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         Fixture f;
         QSignalSpy custom(f.preview.get(), &md::MarkdownPreview::customLinkActivated);
         QSignalSpy documents(f.preview.get(), &md::MarkdownPreview::documentLinkActivated);
+        QSignalSpy locals(f.preview.get(), &md::MarkdownPreview::localLinkActivated);
         const QString body = QStringLiteral(
             "[object](db:APP.PARENT) [ticket](issue:42) [other](other:thing) "
-            "[next](sub/next%20doc.md) [ftp](ftp://x/y) [txt](plain.txt) [top](#orders)\n\n# Orders\n");
+            "[next](sub/next%20doc.md) [ftp](ftp://x/y) [txt](plain.txt) [top](#orders) "
+            "[web](www.example.com)\n\n# Orders\n");
         QVERIFY(f.show({
             .body = body,
             .baseDirectory = dir.path(),
@@ -239,12 +242,17 @@ private slots:
         (void)f.js(QStringLiteral("for (const a of document.querySelectorAll('a')) a.click(); true"));
         QTRY_COMPARE_WITH_TIMEOUT(custom.size(), 2, 10000);
         QTRY_COMPARE_WITH_TIMEOUT(documents.size(), 1, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(locals.size(), 3, 10000);
+        QCOMPARE(locals.at(0).front().toString(), QStringLiteral("sub/next%20doc.md"));
+        QCOMPARE(locals.at(1).front().toString(), QStringLiteral("plain.txt"));
+        QCOMPARE(locals.at(2).front().toString(), QStringLiteral("www.example.com"));
         QCOMPARE(custom.at(0).front().toString(), QStringLiteral("db:APP.PARENT"));
         QCOMPARE(custom.at(1).front().toString(), QStringLiteral("issue:42"));
         QCOMPARE(documents.front().front().toString(), dir.filePath(QStringLiteral("sub/next doc.md")));
         QTest::qWait(200); // anything else that was going to happen has
         QCOMPARE(custom.size(), 2);
         QCOMPARE(documents.size(), 1);
+        QCOMPARE(locals.size(), 3);
         QCOMPARE(f.page->url(), md::MarkdownPage::pageUrl());
 
         // The schemes belong to a content: without them the same links are inert.
@@ -252,6 +260,7 @@ private slots:
         QCOMPARE(f.count(QStringLiteral("a.custom-link")), 0);
         (void)f.js(QStringLiteral("for (const a of document.querySelectorAll('a')) a.click(); true"));
         QTRY_COMPARE_WITH_TIMEOUT(documents.size(), 2, 10000);
+        QTRY_COMPARE_WITH_TIMEOUT(locals.size(), 6, 10000); // db: and issue: have schemes, even unhandled
         QCOMPARE(custom.size(), 2);
         QCOMPARE(f.page->url(), md::MarkdownPage::pageUrl());
     }

@@ -67,6 +67,7 @@ public:
 signals:
     void customLinkActivated(const QString& url);
     void documentLinkActivated(const QString& path);
+    void localLinkActivated(const QString& link);
     void renderFinished();
     /// requestExportContent() is done: `html` is the rendered body (diagrams and formulas as
     /// `<img src="neko-export:N">`, images with absolute `neko-note:` sources),

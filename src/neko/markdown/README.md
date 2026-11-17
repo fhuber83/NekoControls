@@ -84,7 +84,8 @@ for a preview that follows an editor.
 |---|---|
 | `http:`, `https:`, `mailto:` | opens in the system browser / mail program |
 | one of the content's `linkSchemes` | `customLinkActivated(url)`; drawn apart from web links, with the scheme's marker |
-| another Markdown file, relative (`[x](other.md)`) | `documentLinkActivated(path)` |
+| anything without a scheme (`[x](other.md)`, `[y](../q.sql)`, `[z](www.example.com)`) | `localLinkActivated(link)`, the link as written: the application decides what it opens |
+| another Markdown file, relative (`[x](other.md)`) | also `documentLinkActivated(path)`, resolved against `baseDirectory` |
 | a heading (`#section`) | scrolls there |
 | anything else | nothing |
 

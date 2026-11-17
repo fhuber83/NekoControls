@@ -56,9 +56,11 @@ struct MarkdownPreviewContent {
 /// image links, served through the `neko-note:` scheme) and nothing else -- no
 /// network, no file: URLs, ever; raw HTML in a document is not rendered and Mermaid
 /// runs in its "strict" security level. Links: a click on one of the content's
-/// `linkSchemes` comes out as customLinkActivated(), a link to another Markdown file
-/// as documentLinkActivated(), web links open in the system browser, and every other
-/// link does nothing (an unknown scheme must never reach the OS).
+/// `linkSchemes` comes out as customLinkActivated(), any link without a scheme as
+/// localLinkActivated() (and, to another Markdown file, also documentLinkActivated()),
+/// web links open in the system browser, and every other link does nothing (an unknown
+/// scheme must never reach the OS). Web links are `http:` / `https:` spelled out:
+/// `[x](www.example.com)` is a local link.
 ///
 /// Light or dark follows the widget's palette (QPalette::Base), also when it changes.
 ///
@@ -94,6 +96,13 @@ signals:
     /// A link to another Markdown file (`[x](other.md)`, relative to this one) was
     /// clicked; `path` is the file it points to, which may not exist.
     void documentLinkActivated(const QString& path);
+    /// A link without a scheme (`other.md`, `../a%20b.sql#x`, `/abs/file`, `C:/x.md`)
+    /// was clicked; `link` as the document wrote it (percent-encoded, fragment kept),
+    /// not resolved. The preview opens nothing itself: the application decides which
+    /// files it opens and how, relative to the document's folder -- it can limit links
+    /// to its own folders, which documentLinkActivated() cannot. Emitted before
+    /// documentLinkActivated() for the same click.
+    void localLinkActivated(const QString& link);
     /// The last setContent() is on screen, Mermaid diagrams drawn.
     void renderFinished();
 

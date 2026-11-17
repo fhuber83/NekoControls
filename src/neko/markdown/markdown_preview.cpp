@@ -28,6 +28,7 @@ public:
         layout->addWidget(view_);
         connect(page_, &MarkdownPage::customLinkActivated, this, &MarkdownPreview::customLinkActivated);
         connect(page_, &MarkdownPage::documentLinkActivated, this, &MarkdownPreview::documentLinkActivated);
+        connect(page_, &MarkdownPage::localLinkActivated, this, &MarkdownPreview::localLinkActivated);
         connect(page_, &MarkdownPage::renderFinished, this, &MarkdownPreview::renderFinished);
     }
 
