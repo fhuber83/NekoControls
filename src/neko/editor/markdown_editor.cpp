@@ -8,6 +8,7 @@
 #include <QKeyEvent>
 #include <QListView>
 #include <QScrollBar>
+#include <QStandardItemModel>
 #include <QTextBlock>
 #include <QTextCursor>
 
@@ -20,6 +21,7 @@ namespace neko::editor {
 namespace {
 
 constexpr int kRoleShortcodeName = Qt::UserRole + 1;
+constexpr int kRoleLinkTarget = Qt::UserRole + 2;
 /// Rows measured for the popup's width; the rest are no wider in practice.
 constexpr int kMeasuredRows = 200;
 
@@ -88,6 +90,104 @@ MarkdownEditor::MarkdownEditor(QWidget* parent)
     completer_->popup()->setObjectName(QStringLiteral("EmojiPopup"));
     completer_->popup()->setFont(font());
     connect(completer_, qOverload<const QString&>(&QCompleter::activated), this, &MarkdownEditor::insertEmojiShortcode);
+
+    linkModel_ = new QStandardItemModel(this);
+    linkCompleter_ = new QCompleter(linkModel_, this);
+    linkCompleter_->setWidget(this);
+    linkCompleter_->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
+    linkCompleter_->setCompletionRole(kRoleLinkTarget);
+    linkCompleter_->setMaxVisibleItems(12);
+    linkCompleter_->setWrapAround(false);
+    linkCompleter_->popup()->setObjectName(QStringLiteral("LinkTargetPopup"));
+    linkCompleter_->popup()->setFont(font());
+    connect(linkCompleter_, qOverload<const QString&>(&QCompleter::activated), this, &MarkdownEditor::insertLinkTarget);
+}
+
+void MarkdownEditor::setLinkTargetProvider(MarkdownLinkTargetProvider provider) {
+    linkProvider_ = std::move(provider);
+    hideLinkPopup();
+}
+
+bool MarkdownEditor::isLinkPopupVisible() const {
+    return linkCompleter_->popup()->isVisible();
+}
+
+QStringList MarkdownEditor::linkPopupTargets() const {
+    QStringList targets;
+    if (!isLinkPopupVisible()) {
+        return targets;
+    }
+    for (int row = 0; row < linkModel_->rowCount(); ++row) {
+        targets.append(linkModel_->item(row)->data(kRoleLinkTarget).toString());
+    }
+    return targets;
+}
+
+void MarkdownEditor::hideLinkPopup() {
+    if (isLinkPopupVisible()) {
+        linkCompleter_->popup()->hide();
+    }
+    linkCandidates_.clear();
+    linkCandidatesKey_.clear();
+}
+
+bool MarkdownEditor::updateLinkPopup(bool mayOpen) {
+    const QTextCursor cursor = textCursor();
+    const bool visible = isLinkPopupVisible();
+    std::optional<MarkdownLinkTargetQuery> query;
+    if (linkProvider_ && (visible || mayOpen) && !cursor.hasSelection() && !hasBlockSelection() &&
+        markdownLinkTargetQueryAt(cursor.block().text(), cursor.positionInBlock())) {
+        query = markdownLinkTargetQueryAt(toPlainText(), cursor.position()); // fences need the whole note
+    }
+    if (!query) {
+        hideLinkPopup();
+        return false;
+    }
+    const QString key = query->fragment ? QStringLiteral("#") + query->path : QStringLiteral("files");
+    if (!visible || key != linkCandidatesKey_) {
+        linkCandidates_ = linkProvider_(*query);
+        linkCandidatesKey_ = key;
+    }
+    const auto matches = matchMarkdownLinkTargets(linkCandidates_, query->prefix);
+    if (matches.empty()) {
+        hideLinkPopup();
+        return false;
+    }
+    linkModel_->clear();
+    QAbstractItemView* popup = linkCompleter_->popup();
+    const QFontMetrics metrics(popup->font());
+    int textWidth = 0;
+    for (const MarkdownLinkTarget& t : matches) {
+        auto* item = new QStandardItem(t.label.isEmpty() ? t.target : t.label);
+        item->setData(t.target, kRoleLinkTarget);
+        item->setToolTip(t.target);
+        item->setEditable(false);
+        linkModel_->appendRow(item);
+        if (linkModel_->rowCount() <= kMeasuredRows) {
+            textWidth = std::max(textWidth, metrics.horizontalAdvance(item->text()));
+        }
+    }
+    linkCompleter_->setCompletionPrefix(QString());
+    const int scrollBar = popup->verticalScrollBar() ? popup->verticalScrollBar()->sizeHint().width() : 16;
+    QRect rect = cursorRect();
+    rect.setWidth(std::clamp(textWidth + scrollBar + 28, 220, 640));
+    linkCompleter_->complete(rect);
+    popup->setCurrentIndex(linkCompleter_->completionModel()->index(0, 0));
+    popup->scrollToTop();
+    return true;
+}
+
+void MarkdownEditor::insertLinkTarget(const QString& target) {
+    const auto query = markdownLinkTargetQueryAt(toPlainText(), textCursor().position());
+    hideLinkPopup();
+    if (!query || target.isEmpty()) {
+        return;
+    }
+    QTextCursor cursor = textCursor();
+    cursor.setPosition(static_cast<int>(query->start));
+    cursor.setPosition(static_cast<int>(query->end), QTextCursor::KeepAnchor);
+    cursor.insertText(target);
+    setTextCursor(cursor);
 }
 
 bool MarkdownEditor::isEmojiPopupVisible() const {
@@ -163,7 +263,29 @@ void MarkdownEditor::insertEmojiShortcode(const QString& name) {
 }
 
 void MarkdownEditor::keyPressEvent(QKeyEvent* event) {
-    // While the list is open, QCompleter hands us the keys first; Up / Down never get here.
+    // While a list is open, QCompleter hands us the keys first; Up / Down never get here.
+    if (isLinkPopupVisible()) {
+        switch (event->key()) {
+        case Qt::Key_Enter:
+        case Qt::Key_Return:
+        case Qt::Key_Tab: {
+            const QModelIndex current = linkCompleter_->popup()->currentIndex();
+            if (current.isValid()) {
+                insertLinkTarget(current.data(kRoleLinkTarget).toString());
+                event->accept();
+                return;
+            }
+            hideLinkPopup();
+            break;
+        }
+        case Qt::Key_Escape:
+            hideLinkPopup();
+            event->accept();
+            return;
+        default:
+            break;
+        }
+    }
     if (isEmojiPopupVisible()) {
         switch (event->key()) {
         case Qt::Key_Enter:
@@ -188,7 +310,9 @@ void MarkdownEditor::keyPressEvent(QKeyEvent* event) {
     }
 
     if (event->key() == Qt::Key_Space && event->modifiers() == Qt::ControlModifier) {
-        updateEmojiPopup();
+        if (!updateLinkPopup(true)) {
+            updateEmojiPopup();
+        }
         event->accept();
         return;
     }
@@ -198,9 +322,13 @@ void MarkdownEditor::keyPressEvent(QKeyEvent* event) {
     }
 
     const bool wasVisible = isEmojiPopupVisible();
+    const bool linkWasVisible = isLinkPopupVisible();
     CodeEditor::keyPressEvent(event);
 
     if (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete) {
+        if (linkWasVisible) {
+            (void)updateLinkPopup(false);
+        }
         if (wasVisible) {
             updateEmojiPopup(); // narrows back out; never opens on its own
         }
@@ -208,7 +336,12 @@ void MarkdownEditor::keyPressEvent(QKeyEvent* event) {
     }
     const QString typed = event->text();
     if (typed.isEmpty() || !typed.front().isPrint()) {
+        hideLinkPopup();
         hideEmojiPopup(); // a cursor move, a shortcut
+        return;
+    }
+    if (updateLinkPopup(typed == QStringLiteral("#"))) {
+        hideEmojiPopup();
         return;
     }
     updateEmojiPopup();
@@ -218,6 +351,7 @@ void MarkdownEditor::changeEvent(QEvent* event) {
     CodeEditor::changeEvent(event);
     if (event->type() == QEvent::FontChange) {
         completer_->popup()->setFont(font());
+        linkCompleter_->popup()->setFont(font());
     }
 }
 

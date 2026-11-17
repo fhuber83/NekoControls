@@ -138,6 +138,11 @@ public:
     /// Replaces the text (opening a file): the preview and a shown outline follow at
     /// once, the undo history is dropped, and the document counts as unmodified.
     void setText(const QString& text);
+    /// Goes to the heading whose anchor is `anchor` (MarkdownHeading::anchor; what a
+    /// link `other.md#anchor` names), as a click on it in the outline does: the source's
+    /// cursor and the preview, whichever is shown. False, changing nothing, when no
+    /// heading has it.
+    bool showHeading(const QString& anchor);
     [[nodiscard]] QString text() const;
     /// Changes since setText() or the last setModified(false).
     [[nodiscard]] bool isModified() const;

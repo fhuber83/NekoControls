@@ -11,7 +11,7 @@ nothing else. C++23, MIT license. Part of [NekoControls](../../../README.md).
 |---|---|
 | `MarkdownDocumentEditor` | The widget: source editor with Find / Replace, emoji picker and highlighting; preview; three views (Source, Split, Preview); an outline of the headings; "Table..." and line-wrap actions; an optional tool bar |
 | `MarkdownOutline` | The headings of a document as a tree; a click says where the heading is |
-| `markdown_structure` | Widget-free: `frontMatterLineCount()`, `extractMarkdownHeadings()` |
+| `markdown_structure` | Widget-free: `frontMatterLineCount()`, `extractMarkdownHeadings()` (each with the `anchor` the preview gives it), `markdownHeadingSlug()` |
 
 Everything is in the namespace `neko::markdown_editor`. Each header documents its
 class; that is the reference.

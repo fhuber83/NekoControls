@@ -17,6 +17,7 @@
 #include "neko/editor/emoji_shortcodes.hpp"
 #include "neko/editor/markdown_editor.hpp"
 #include "neko/editor/markdown_highlighter.hpp"
+#include "neko/editor/markdown_link_target.hpp"
 #include "neko/editor/markdown_table.hpp"
 #include "neko/editor/markdown_table_dialog.hpp"
 #include "neko/editor/text_search.hpp"
@@ -776,6 +777,163 @@ private slots:
         QTest::keyClicks(editor, QStringLiteral(":"));
         QVERIFY(editor->isEmojiPopupVisible());
         QTest::keyClick(popup, Qt::Key_Escape);
+    }
+
+    /// Where a link destination is being typed: after `[text](` on the same line, up to
+    /// the cursor; a `#` turns it into a fragment of the path before it. Images, code
+    /// and anything after a space or `)` do not count.
+    void testMarkdownLinkTargetQuery() {
+        const auto at = [](const QString& text, qsizetype pos = -1) {
+            return ed::markdownLinkTargetQueryAt(text, pos < 0 ? text.size() : pos);
+        };
+        auto q = at(QStringLiteral("See [the spec]("));
+        QVERIFY(q);
+        QCOMPARE(q->start, qsizetype{15});
+        QCOMPARE(q->end, qsizetype{15});
+        QVERIFY(q->path.isEmpty() && q->prefix.isEmpty() && !q->fragment);
+
+        q = at(QStringLiteral("x [a](docs/or"));
+        QVERIFY(q);
+        QCOMPARE(q->path, QStringLiteral("docs/or"));
+        QCOMPARE(q->prefix, QStringLiteral("docs/or"));
+
+        // A fragment: the whole path before the `#`; what follows narrows.
+        q = at(QStringLiteral("[a](docs/orders%20spec.md#tot"));
+        QVERIFY(q && q->fragment);
+        QCOMPARE(q->path, QStringLiteral("docs/orders%20spec.md"));
+        QCOMPARE(q->prefix, QStringLiteral("tot"));
+        QCOMPARE(q->start, qsizetype{26});
+        q = at(QStringLiteral("[a](#"));
+        QVERIFY(q && q->fragment && q->path.isEmpty() && q->prefix.isEmpty());
+
+        // Inside a finished destination: the path part, or the fragment, up to its end.
+        const QString done = QStringLiteral("[a](docs/x.md#part) after");
+        q = at(done, 7); // "[a](doc|s"
+        QVERIFY(q && !q->fragment);
+        QCOMPARE(q->start, qsizetype{4});
+        QCOMPARE(q->end, qsizetype{13}); // before '#'
+        q = at(done, 16);                // "#pa|rt"
+        QVERIFY(q && q->fragment);
+        QCOMPARE(q->end, qsizetype{18}); // before ')'
+
+        // Not a destination.
+        QVERIFY(!at(QStringLiteral("[a](x.md) more")));
+        QVERIFY(!at(QStringLiteral("[a](x y")));
+        QVERIFY(!at(QStringLiteral("![pic](img")));
+        QVERIFY(!at(QStringLiteral("(plain")));
+        QVERIFY(!at(QStringLiteral("a](x"))); // no link text on the line
+        QVERIFY(!at(QStringLiteral("`[a](x")));
+        QVERIFY(!at(QStringLiteral("```\n[a](x")));
+        QVERIFY(at(QStringLiteral("```\ncode\n```\n[a](x")));
+        QVERIFY(!at(QStringLiteral("[a]\n(x")));
+
+        // Matching: starts with first, then a word of it, then anywhere; case-insensitive.
+        const std::vector<ed::MarkdownLinkTarget> all{
+            {.target = QStringLiteral("docs/orders%20spec.md"), .label = QStringLiteral("docs/orders spec.md")},
+            {.target = QStringLiteral("orders.sql"), .label = {}},
+            {.target = QStringLiteral("reorders.md"), .label = {}},
+            {.target = QStringLiteral("notes.md"), .label = {}},
+        };
+        const auto targets = [&](const QString& prefix) {
+            QStringList out;
+            for (const auto& t : ed::matchMarkdownLinkTargets(all, prefix)) {
+                out << t.target;
+            }
+            return out;
+        };
+        QCOMPARE(targets({}).size(), 4);
+        QCOMPARE(
+            targets(QStringLiteral("ORD")),
+            (QStringList{
+                QStringLiteral("orders.sql"), QStringLiteral("docs/orders%20spec.md"), QStringLiteral("reorders.md")}));
+        QCOMPARE(targets(QStringLiteral("orders spec")), QStringList{QStringLiteral("docs/orders%20spec.md")});
+        QVERIFY(targets(QStringLiteral("zzz")).isEmpty());
+    }
+
+    /// Link completion in MarkdownEditor, with real keys: Ctrl+Space in `[x](` lists the
+    /// provider's files, typing narrows, Enter puts the target in; a `#` lists the
+    /// headings of the file before it. Without a provider nothing opens.
+    void testMarkdownEditorLinkCompletion() {
+        ed::MarkdownEditor editor;
+        editor.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&editor));
+        editor.setFocus();
+        QAbstractItemView* popup = editor.linkCompleter()->popup();
+
+        editor.setPlainText(QStringLiteral("See [spec]("));
+        editor.moveCursor(QTextCursor::End);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(!editor.isLinkPopupVisible()); // no provider
+
+        QList<ed::MarkdownLinkTargetQuery> asked;
+        editor.setLinkTargetProvider([&asked](const ed::MarkdownLinkTargetQuery& q) {
+            asked << q;
+            if (!q.fragment) {
+                return std::vector<ed::MarkdownLinkTarget>{
+                    {.target = QStringLiteral("docs/orders%20spec.md"), .label = QStringLiteral("docs/orders spec.md")},
+                    {.target = QStringLiteral("fix.sql"), .label = {}},
+                };
+            }
+            if (q.path == QStringLiteral("docs/orders%20spec.md")) {
+                return std::vector<ed::MarkdownLinkTarget>{
+                    {.target = QStringLiteral("orders"), .label = QStringLiteral("# Orders")},
+                    {.target = QStringLiteral("totals"), .label = QStringLiteral("## Totals")},
+                };
+            }
+            return std::vector<ed::MarkdownLinkTarget>{};
+        });
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(editor.isLinkPopupVisible());
+        QCOMPARE(
+            editor.linkPopupTargets(),
+            (QStringList{QStringLiteral("docs/orders%20spec.md"), QStringLiteral("fix.sql")}));
+        QVERIFY(popup->currentIndex().isValid());
+        QTest::keyClicks(popup, QStringLiteral("ord"));
+        QCOMPARE(editor.linkPopupTargets(), QStringList{QStringLiteral("docs/orders%20spec.md")});
+        QCOMPARE(asked.size(), 1); // narrowing does not ask again
+        QTest::keyClick(popup, Qt::Key_Return);
+        QVERIFY(!editor.isLinkPopupVisible());
+        QCOMPARE(editor.toPlainText(), QStringLiteral("See [spec](docs/orders%20spec.md"));
+
+        // A '#' lists the file's headings by itself; Tab puts the anchor in.
+        QTest::keyClicks(&editor, QStringLiteral("#"));
+        QVERIFY(editor.isLinkPopupVisible());
+        QCOMPARE(editor.linkPopupTargets(), (QStringList{QStringLiteral("orders"), QStringLiteral("totals")}));
+        QCOMPARE(asked.size(), 2);
+        QVERIFY(asked.back().fragment);
+        QTest::keyClicks(popup, QStringLiteral("tot"));
+        QTest::keyClick(popup, Qt::Key_Tab);
+        QCOMPARE(editor.toPlainText(), QStringLiteral("See [spec](docs/orders%20spec.md#totals"));
+
+        // A file without headings: '#' opens nothing. ')' closes an open list.
+        QTest::keyClicks(&editor, QStringLiteral(") [b](fix.sql#"));
+        QVERIFY(!editor.isLinkPopupVisible());
+        QTest::keyClick(&editor, Qt::Key_Backspace);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(editor.isLinkPopupVisible());
+        QTest::keyClicks(popup, QStringLiteral(")"));
+        QVERIFY(!editor.isLinkPopupVisible());
+
+        // Ctrl+Space inside a finished destination replaces its path, keeps the fragment.
+        editor.setPlainText(QStringLiteral("[a](old.md#totals) end"));
+        QTextCursor c = editor.textCursor();
+        c.setPosition(4); // "[a](|old"
+        editor.setTextCursor(c);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(editor.isLinkPopupVisible());
+        editor.insertLinkTarget(QStringLiteral("docs/orders%20spec.md"));
+        QCOMPARE(editor.toPlainText(), QStringLiteral("[a](docs/orders%20spec.md#totals) end"));
+
+        // Outside a destination Ctrl+Space is still the emoji picker's; '#' opens nothing.
+        editor.setPlainText(QStringLiteral("a :smi"));
+        editor.moveCursor(QTextCursor::End);
+        QTest::keyClick(&editor, Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(!editor.isLinkPopupVisible());
+        QVERIFY(editor.isEmojiPopupVisible());
+        QTest::keyClick(editor.emojiCompleter()->popup(), Qt::Key_Escape);
+        editor.setPlainText(QString());
+        QTest::keyClicks(&editor, QStringLiteral("# Heading"));
+        QVERIFY(!editor.isLinkPopupVisible());
     }
 
     /// Column (box) selection in CodeEditor, with real input: Alt + drag selects a

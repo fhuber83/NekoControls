@@ -1,5 +1,8 @@
 #include "neko/markdown_editor/markdown_structure.hpp"
 
+#include "neko/editor/emoji_shortcodes.hpp"
+
+#include <QHash>
 #include <QRegularExpression>
 
 #include <algorithm>
@@ -126,6 +129,7 @@ std::vector<MarkdownHeading> extractMarkdownHeadings(const QString& text, int bo
                         .text = title,
                         .line = lineNum,
                         .offset = pos,
+                        .anchor = {},
                     });
                 }
                 hasCandidate = false;
@@ -135,6 +139,7 @@ std::vector<MarkdownHeading> extractMarkdownHeadings(const QString& text, int bo
                     .text = candidateText,
                     .line = candidateLine,
                     .offset = candidateOffset,
+                    .anchor = {},
                 });
                 hasCandidate = false;
             } else {
@@ -154,7 +159,53 @@ std::vector<MarkdownHeading> extractMarkdownHeadings(const QString& text, int bo
         pos = eol + 1;
         ++lineNum;
     }
+    QHash<QString, int> slugCounts;
+    for (MarkdownHeading& heading : headings) {
+        const QString base = markdownHeadingSlug(heading.text);
+        const int count = slugCounts.value(base, 0);
+        slugCounts.insert(base, count + 1);
+        heading.anchor = count == 0 ? base : QStringLiteral("%1-%2").arg(base).arg(count);
+    }
     return headings;
+}
+
+QString markdownHeadingSlug(const QString& headingText) {
+    constexpr auto kUnicode = QRegularExpression::UseUnicodePropertiesOption;
+    static const QRegularExpression link(QStringLiteral(R"(!?\[([^\]]*)\]\([^)]*\))"), kUnicode);
+    static const QRegularExpression shortcode(QStringLiteral(R"(:([a-z0-9_+-]+):)"));
+    static const QRegularExpression edgeUnderscores(
+        QStringLiteral(R"((?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}]))"), kUnicode);
+    static const QRegularExpression dropped(QStringLiteral(R"([^\p{L}\p{N}\s_-])"), kUnicode);
+    static const QRegularExpression spaces(QStringLiteral(R"(\s+)"), kUnicode);
+    static const QRegularExpression dashes(QStringLiteral("-+"));
+
+    // The text as the preview renders it: what a link shows, no emoji shortcodes (the
+    // emoji is dropped below anyway), no `_` of emphasis.
+    QString text = headingText;
+    text.replace(link, QStringLiteral("\\1"));
+    QString withoutEmoji;
+    qsizetype last = 0;
+    for (auto it = shortcode.globalMatch(text); it.hasNext();) {
+        const auto m = it.next();
+        if (editor::findEmojiShortcode(m.captured(1).toStdString()) != nullptr) {
+            withoutEmoji += QStringView(text).mid(last, m.capturedStart() - last);
+            last = m.capturedEnd();
+        }
+    }
+    withoutEmoji += QStringView(text).mid(last);
+    withoutEmoji.remove(edgeUnderscores);
+
+    QString slug = withoutEmoji.toLower().trimmed();
+    slug.remove(dropped);
+    slug.replace(spaces, QStringLiteral("-"));
+    slug.replace(dashes, QStringLiteral("-"));
+    while (slug.startsWith(QLatin1Char('-'))) {
+        slug.remove(0, 1);
+    }
+    while (slug.endsWith(QLatin1Char('-'))) {
+        slug.chop(1);
+    }
+    return slug.isEmpty() ? QStringLiteral("section") : slug;
 }
 
 } // namespace neko::markdown_editor

@@ -20,7 +20,7 @@ README is its manual; each header documents its class.
 ```cmake
 include(FetchContent)
 FetchContent_Declare(neko_controls
-    URL      https://github.com/fhuber83/NekoControls/releases/download/v0.3.0/NekoControls-0.3.0.tar.gz
+    URL      https://github.com/fhuber83/NekoControls/releases/download/v0.4.0/NekoControls-0.4.0.tar.gz
     URL_HASH SHA256=...)   # the exact line is in the release notes
 FetchContent_MakeAvailable(neko_controls)
 

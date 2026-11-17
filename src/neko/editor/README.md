@@ -9,15 +9,16 @@ files, nothing of an application. C++23, MIT license. Part of
 |---|---|
 | `CodeEditor` | A `QPlainTextEdit` with a line-number gutter, current-line highlight, column (box) selection (Alt + drag, Alt+Shift+arrows), a line-wrap toggle (Alt+Z), overwrite mode with a signal, and an undoable whole-text replace |
 | `EditorFindBar` | Find / Replace for a `CodeEditor` or any `QPlainTextEdit`: Ctrl+F / Ctrl+H, F3, match case, whole word, regular expressions with `$1`, highlighted matches, undoable Replace All |
-| `MarkdownEditor` | A `CodeEditor` with a GitHub emoji picker: `:` opens it, typing narrows it |
+| `MarkdownEditor` | A `CodeEditor` with a GitHub emoji picker (`:` opens it, typing narrows it) and link completion: with a `MarkdownLinkTargetProvider` set, Ctrl+Space in `[text](` lists the files the application offers, and `#` after one its headings |
 | `MarkdownHighlighter` | A dependency-free `QSyntaxHighlighter` for Markdown, light or dark |
 | `MarkdownTableDialog` | A dialog that builds a Markdown table: columns, alignment, widths, empty rows |
 | `EditorDefaults` | The font and line wrapping every editor starts with and follows |
 
 The logic under the widgets is widget-free and usable by itself: `block_selection`
 (column-selection arithmetic), `text_search` (`findAll`, `replacementFor`),
-`emoji_shortcodes`, `markdown_table` (`buildMarkdownTable`). Each header documents its
-class; that is the reference.
+`emoji_shortcodes`, `markdown_link_target` (`markdownLinkTargetQueryAt`,
+`matchMarkdownLinkTargets`), `markdown_table` (`buildMarkdownTable`). Each header
+documents its class; that is the reference.
 
 Everything is in the namespace `neko::editor`.
 

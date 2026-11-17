@@ -356,6 +356,19 @@ void MarkdownDocumentEditor::syncPreviewScroll() {
     preview_->scrollToSourceLine(editor_->cursorForPosition(QPoint(0, 0)).blockNumber());
 }
 
+bool MarkdownDocumentEditor::showHeading(const QString& anchor) {
+    if (anchor.isEmpty()) {
+        return false;
+    }
+    for (const MarkdownHeading& h : extractMarkdownHeadings(editor_->toPlainText(), previewContent().bodyStartLine)) {
+        if (h.anchor == anchor) {
+            jumpTo(h.offset, h.line);
+            return true;
+        }
+    }
+    return false;
+}
+
 void MarkdownDocumentEditor::jumpTo(qsizetype offset, int line) {
     if (mode_ != MarkdownViewMode::Preview) {
         QTextCursor cursor = editor_->textCursor();

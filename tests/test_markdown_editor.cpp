@@ -170,6 +170,34 @@ private slots:
         QVERIFY(mde::extractMarkdownHeadings(QStringLiteral("- item\n---\n> quote\n===\n")).empty());
     }
 
+    /// A heading's anchor is the preview's id for it: the rendered text slugified,
+    /// duplicates numbered.
+    void testHeadingAnchors() {
+        QCOMPARE(mde::markdownHeadingSlug(QStringLiteral("Orders & Totals")), QStringLiteral("orders-totals"));
+        QCOMPARE(mde::markdownHeadingSlug(QStringLiteral("  Über die Größe ")), QStringLiteral("über-die-größe"));
+        QCOMPARE(mde::markdownHeadingSlug(QStringLiteral("See [the spec](docs/a.md)")), QStringLiteral("see-the-spec"));
+        QCOMPARE(
+            mde::markdownHeadingSlug(QStringLiteral("**Bold** _em_ `code` snake_case")),
+            QStringLiteral("bold-em-code-snake_case"));
+        QCOMPARE(
+            mde::markdownHeadingSlug(QStringLiteral("Done :tada: :notanemoji:")), QStringLiteral("done-notanemoji"));
+        QCOMPARE(mde::markdownHeadingSlug(QStringLiteral("!!!")), QStringLiteral("section"));
+
+        const auto headings =
+            mde::extractMarkdownHeadings(QStringLiteral("# Intro\n\n## Intro\n\nSetext\n------\n\n### Intro\n"));
+        QStringList anchors;
+        for (const auto& h : headings) {
+            anchors << h.anchor;
+        }
+        QCOMPARE(
+            anchors,
+            (QStringList{
+                QStringLiteral("intro"),
+                QStringLiteral("intro-1"),
+                QStringLiteral("setext"),
+                QStringLiteral("intro-2")}));
+    }
+
     void testDefaultContent() {
         const auto plain = mde::defaultMarkdownContent(QStringLiteral("# A\n\nText.\n"), QStringLiteral("/docs"));
         QCOMPARE(plain.body, QStringLiteral("# A\n\nText.\n"));
@@ -648,6 +676,42 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(rendered.size() > before, kRenderTimeoutMs);
         const QString after = evalJs(view->page(), QStringLiteral("document.body.innerText")).toString();
         QVERIFY2(after.contains(QStringLiteral("Typed later.")), qPrintable(after));
+    }
+
+    /// The anchors extractMarkdownHeadings() computes are the ids the real preview gives
+    /// its headings; showHeading() goes to one.
+    void testHeadingAnchorsMatchPreview() {
+        mde::MarkdownDocumentEditor doc;
+        doc.resize(1000, 700);
+        doc.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&doc));
+        doc.setViewMode(mde::MarkdownViewMode::Split);
+        QSignalSpy rendered(doc.preview(), &md::MarkdownPreview::renderFinished);
+        const QString text = QStringLiteral(
+            "---\ntitle: x\n---\n# Orders & Totals\n\n## Orders & Totals\n\n"
+            "## See [the spec](docs/a.md) :tada:\n\n### **Bold** _em_ `code` snake_case\n\n"
+            "Über die Größe\n===\n\n## !!!\n\n## 2024-01: Q1/Q2 (draft)\n");
+        doc.setText(text);
+        QTRY_VERIFY_WITH_TIMEOUT(rendered.size() >= 1, kRenderTimeoutMs);
+        auto* view = doc.preview()->findChild<QWebEngineView*>();
+        QVERIFY(view);
+        const QStringList ids = evalJs(
+                                    view->page(),
+                                    QStringLiteral(
+                                        "Array.from(document.querySelectorAll('#content h1, #content h2, #content h3'))"
+                                        ".map(h => h.id).join('\\n')"))
+                                    .toString()
+                                    .split(QLatin1Char('\n'));
+        QStringList anchors;
+        for (const auto& h : mde::extractMarkdownHeadings(text)) {
+            anchors << h.anchor;
+        }
+        QCOMPARE(anchors, ids);
+
+        QVERIFY(doc.showHeading(anchors.at(4)));
+        QCOMPARE(doc.editor()->textCursor().blockNumber(), 11); // "Über die Größe"
+        QVERIFY(!doc.showHeading(QStringLiteral("nope")));
+        QCOMPARE(doc.editor()->textCursor().blockNumber(), 11); // "Über die Größe"
     }
 
     // The library carries its own translations; the application picks the language.

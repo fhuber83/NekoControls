@@ -21,6 +21,8 @@ add_library(neko_editor STATIC
     emoji_shortcodes.hpp
     emoji_shortcodes.cpp
     emoji_shortcodes_data.inc
+    markdown_link_target.hpp
+    markdown_link_target.cpp
     markdown_table.hpp
     markdown_table.cpp
     editor_defaults.hpp
