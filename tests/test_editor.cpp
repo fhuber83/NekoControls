@@ -40,15 +40,18 @@
 #include <QSet>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QSyntaxHighlighter>
 #include <QTableWidget>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextLayout>
 #include <QToolButton>
 #include <QTranslator>
 #include <QVBoxLayout>
 #include <QtTest>
 
+#include <algorithm>
 #include <string_view>
 #include <vector>
 
@@ -1054,6 +1057,225 @@ private slots:
         QCOMPARE(note.toPlainText(), QStringLiteral("| z | b |\n| z | d |\n"));
         note.undo(); // one step
         QCOMPARE(note.toPlainText(), QStringLiteral("| a | b |\n| c | d |\n"));
+    }
+
+    /// The part of an inline suggestion Ctrl+Right accepts.
+    void testInlineSuggestionWords() {
+        const auto word = [](const char* text) {
+            const QString s = QString::fromUtf8(text);
+            return s.left(ed::CodeEditor::nextSuggestionWordLength(s));
+        };
+        QCOMPARE(word("a + b;"), QStringLiteral("a"));
+        QCOMPARE(word(" + b;"), QStringLiteral(" +"));
+        QCOMPARE(word("  sum_2(x)"), QStringLiteral("  sum_2"));
+        QCOMPARE(word("(x)"), QStringLiteral("(")); // a run of punctuation stops at a word
+        QCOMPARE(word(");\n}"), QStringLiteral(");"));
+        QCOMPARE(word("\n    return x;"), QStringLiteral("\n    "));
+        QCOMPARE(word("ünïcödé rest"), QStringLiteral("ünïcödé"));
+        QCOMPARE(word(""), QString());
+    }
+
+    /// Inline suggestion (ghost text): drawn after the caret, taking up lines, but not in
+    /// the document; typing eats into it, Ctrl+Right / Tab accept it as undo steps, edits,
+    /// caret moves, Esc and clicks dismiss it.
+    void testInlineSuggestion() {
+        QWidget window;
+        auto* layout = new QVBoxLayout(&window);
+        auto* editor = new ed::CodeEditor(&window);
+        layout->addWidget(editor);
+        window.resize(700, 400);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        window.activateWindow();
+        const QString original = QStringLiteral("int add(int a, int b) {\n    return \n}\nint after;");
+        editor->setPlainText(original);
+        editor->document()->setModified(false);
+        editor->setFocus();
+        QTRY_VERIFY(editor->hasFocus());
+
+        // A keyword highlighter, so the suggestion's colour has to live with other formats.
+        class Keywords final : public QSyntaxHighlighter {
+        public:
+            using QSyntaxHighlighter::QSyntaxHighlighter;
+
+        protected:
+            void highlightBlock(const QString& text) override {
+                QTextCharFormat keyword;
+                keyword.setForeground(Qt::blue);
+                auto it = QRegularExpression(QStringLiteral(R"(\b(int|return)\b)")).globalMatch(text);
+                while (it.hasNext()) {
+                    const auto m = it.next();
+                    setFormat(int(m.capturedStart()), int(m.capturedLength()), keyword);
+                }
+            }
+        };
+        auto* highlighter = new Keywords(editor->document());
+
+        const auto placeCaret = [editor](int line, int index) {
+            QTextCursor c(editor->document()->findBlockByNumber(line));
+            c.setPosition(c.block().position() + index);
+            editor->setTextCursor(c);
+        };
+        const auto block = [editor](int line) { return editor->document()->findBlockByNumber(line); };
+        const auto blockTop = [editor, &block](int line) { return editor->cursorRect(QTextCursor(block(line))).top(); };
+        const auto ghostFormats = [&block](int line) {
+            const auto formats = block(line).layout()->formats();
+            return std::ranges::count_if(formats, [](const QTextLayout::FormatRange& r) {
+                return r.format.foreground().color() != QColor(Qt::blue);
+            });
+        };
+        QSignalSpy accepted(editor, &ed::CodeEditor::inlineSuggestionAccepted);
+        QSignalSpy dismissed(editor, &ed::CodeEditor::inlineSuggestionDismissed);
+
+        placeCaret(1, 11); // after "return "
+        const qreal closingTop = blockTop(2);
+        editor->setInlineSuggestion(QStringLiteral("a + b;\r\n    // sum"));
+        editor->grab(); // lays it out
+        QVERIFY(editor->hasInlineSuggestion());
+        QCOMPARE(editor->inlineSuggestion(), QStringLiteral("a + b;\n    // sum")); // \r dropped
+        // Not in the document, but laid out: line 1 now takes two lines, pushing "}" down.
+        QCOMPARE(editor->toPlainText(), original);
+        QVERIFY(!editor->document()->isModified());
+        QVERIFY(!editor->document()->isUndoAvailable());
+        QCOMPARE(block(1).layout()->preeditAreaText(), QStringLiteral("a + b;     // sum"));
+        QCOMPARE(block(1).layout()->lineCount(), 2);
+        QVERIFY(blockTop(2) > closingTop);
+        QCOMPARE(ghostFormats(1), 1);
+        const QColor placeholder = editor->palette().color(QPalette::PlaceholderText);
+        QVERIFY(std::ranges::any_of(block(1).layout()->formats(), [&](const QTextLayout::FormatRange& r) {
+            return r.start == 11 && r.length == 17 && r.format.foreground().color() == placeholder;
+        }));
+
+        // A highlighter replacing the block's formats: painting puts the colour back.
+        highlighter->rehighlight();
+        editor->grab();
+        QCOMPARE(ghostFormats(1), 1);
+        QCOMPARE(block(1).layout()->preeditAreaText(), QStringLiteral("a + b;     // sum"));
+
+        // Typing what it starts with eats into it; no signal.
+        QTest::keyClicks(editor, QStringLiteral("a "));
+        QCOMPARE(editor->inlineSuggestion(), QStringLiteral("+ b;\n    // sum"));
+        QCOMPARE(block(1).text(), QStringLiteral("    return a "));
+        QCOMPARE(block(1).layout()->preeditAreaPosition(), 13);
+        QCOMPARE(accepted.count(), 0);
+        QCOMPARE(dismissed.count(), 0);
+
+        // Ctrl+Right: the next word, one undo step; the rest stays.
+        QTest::keyClick(editor, Qt::Key_Right, Qt::ControlModifier);
+        QCOMPARE(block(1).text(), QStringLiteral("    return a +"));
+        QCOMPARE(editor->inlineSuggestion(), QStringLiteral(" b;\n    // sum"));
+        QCOMPARE(accepted.count(), 1);
+        QCOMPARE(accepted.last().at(0).value<qsizetype>(), qsizetype{3}); // "a +"
+        QCOMPARE(accepted.last().at(1).toBool(), false);
+        QCOMPARE(editor->textCursor().positionInBlock(), 14);
+
+        // Tab: all the rest, lines included.
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(
+            editor->toPlainText(),
+            QStringLiteral("int add(int a, int b) {\n    return a + b;\n    // sum\n}\nint after;"));
+        QCOMPARE(accepted.count(), 2);
+        QCOMPARE(accepted.last().at(0).value<qsizetype>(), qsizetype{17});
+        QCOMPARE(accepted.last().at(1).toBool(), true);
+        QCOMPARE(dismissed.count(), 0);
+        QCOMPARE(block(1).layout()->preeditAreaPosition(), -1);
+        QCOMPARE(ghostFormats(1), 0);
+        QCOMPARE(ghostFormats(2), 0);
+        editor->undo(); // the Tab
+        QCOMPARE(block(1).text(), QStringLiteral("    return a +"));
+        editor->undo(); // the Ctrl+Right
+        QCOMPARE(block(1).text(), QStringLiteral("    return a "));
+
+        // Typing something else dismisses it.
+        editor->setPlainText(original);
+        placeCaret(1, 11);
+        editor->setInlineSuggestion(QStringLiteral("a + b;"));
+        QTest::keyClicks(editor, QStringLiteral("x"));
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 1);
+        QCOMPARE(block(1).layout()->preeditAreaPosition(), -1);
+        QCOMPARE(ghostFormats(1), 0);
+
+        // Typing it to its end: it just ends.
+        editor->setInlineSuggestion(QStringLiteral("y;"));
+        QTest::keyClicks(editor, QStringLiteral("y;"));
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 1);
+        QCOMPARE(accepted.count(), 2);
+
+        // Esc.
+        editor->setInlineSuggestion(QStringLiteral(" // done"));
+        QTest::keyClick(editor, Qt::Key_Escape);
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 2);
+        QCOMPARE(editor->toPlainText(), QStringLiteral("int add(int a, int b) {\n    return xy;\n}\nint after;"));
+
+        // A caret move by the program: dismissed, and the line keeps its highlighting.
+        editor->setInlineSuggestion(QStringLiteral(" // done"));
+        placeCaret(0, 0);
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 3);
+        QCOMPARE(block(1).layout()->preeditAreaPosition(), -1);
+        QVERIFY(!block(1).layout()->formats().isEmpty()); // "return"
+
+        // A click.
+        placeCaret(1, 13);
+        editor->setInlineSuggestion(QStringLiteral(" // done"));
+        QTextCursor elsewhere(block(3));
+        QTest::mouseClick(editor->viewport(), Qt::LeftButton, {}, editor->cursorRect(elsewhere).center());
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 4);
+        QVERIFY(!block(1).layout()->formats().isEmpty());
+
+        // An edit elsewhere (here: before it, from the program) dismisses it too.
+        placeCaret(1, 13);
+        editor->setInlineSuggestion(QStringLiteral(" // done"));
+        QTextCursor(block(0)).insertText(QStringLiteral("// top\n"));
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 5);
+        for (QTextBlock b = editor->document()->begin(); b.isValid(); b = b.next()) {
+            QCOMPARE(b.layout()->preeditAreaPosition(), -1);
+        }
+
+        // Clearing it from the program: no signal.
+        placeCaret(2, 13);
+        editor->setInlineSuggestion(QStringLiteral(" // done"));
+        editor->clearInlineSuggestion();
+        QVERIFY(!editor->hasInlineSuggestion());
+        QCOMPARE(dismissed.count(), 5);
+        QCOMPARE(block(2).layout()->preeditAreaPosition(), -1);
+
+        // Not shown with a selection, a column selection, or read-only.
+        QTextCursor selection = editor->textCursor();
+        selection.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor);
+        editor->setTextCursor(selection);
+        editor->setInlineSuggestion(QStringLiteral("x"));
+        QVERIFY(!editor->hasInlineSuggestion());
+        placeCaret(2, 13);
+        editor->setBlockSelection({.anchorLine = 1, .anchorColumn = 1, .cursorLine = 2, .cursorColumn = 1});
+        editor->setInlineSuggestion(QStringLiteral("x"));
+        QVERIFY(!editor->hasInlineSuggestion());
+        editor->clearBlockSelection();
+        editor->setReadOnly(true);
+        editor->setInlineSuggestion(QStringLiteral("x"));
+        QVERIFY(!editor->hasInlineSuggestion());
+        editor->setReadOnly(false);
+
+        // A column selection started while one is shown dismisses it.
+        placeCaret(2, 13);
+        editor->setInlineSuggestion(QStringLiteral("x"));
+        QTest::keyClick(editor, Qt::Key_Down, Qt::AltModifier | Qt::ShiftModifier);
+        QVERIFY(!editor->hasInlineSuggestion());
+        QVERIFY(editor->hasBlockSelection());
+        editor->clearBlockSelection();
+
+        // Without a suggestion, Tab is a tab and Ctrl+Right moves by word.
+        editor->setPlainText(QStringLiteral("ab cd"));
+        QTest::keyClick(editor, Qt::Key_Right, Qt::ControlModifier);
+        QVERIFY(editor->textCursor().position() > 0);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QVERIFY(editor->toPlainText().contains(u'\t'));
     }
 
     /// EditorFindBar on a CodeEditor: the shortcuts open it in the editor's pane only,

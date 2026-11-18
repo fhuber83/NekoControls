@@ -12,10 +12,12 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPainter>
+#include <QSyntaxHighlighter>
 #include <QSignalBlocker>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextLayout>
 
 #include <algorithm>
 #include <cmath>
@@ -42,6 +44,17 @@ private:
 bool isModifierKey(int key) {
     return key == Qt::Key_Shift || key == Qt::Key_Control || key == Qt::Key_Alt || key == Qt::Key_Meta ||
            key == Qt::Key_AltGr;
+}
+
+/// Marks the format range of an inline suggestion among a layout's formats.
+constexpr int kSuggestionFormatProperty = QTextFormat::UserProperty + 0x4e4b;
+
+bool isSuggestionFormat(const QTextLayout::FormatRange& range) {
+    return range.format.hasProperty(kSuggestionFormatProperty);
+}
+
+bool isWordChar(QChar c) {
+    return c.isLetterOrNumber() || c == u'_';
 }
 
 } // namespace
@@ -73,10 +86,17 @@ CodeEditor::CodeEditor(QWidget* parent)
         if (block_ && !applyingBlockEdit_ && !blockDragging_) {
             clearBlockSelection(); // moved by something else: Find, a click, the API
         }
+        if (suggestion_ && !editingSuggestion_ &&
+            (textCursor().position() != suggestion_->anchor.position() || textCursor().hasSelection())) {
+            dismissSuggestion();
+        }
     });
-    connect(document(), &QTextDocument::contentsChange, this, [this] {
+    connect(document(), &QTextDocument::contentsChange, this, [this](int position, int removed, int added) {
         if (block_ && !applyingBlockEdit_) {
             clearBlockSelection(); // edited elsewhere, undo included: the box no longer fits
+        }
+        if (suggestion_ && !editingSuggestion_) {
+            suggestionContentsChanged(position, removed, added);
         }
     });
     updateLineNumberAreaWidth();
@@ -206,6 +226,9 @@ void CodeEditor::changeEvent(QEvent* event) {
     } else if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange) {
         highlightCurrentLine();
         lineNumberArea_->update();
+        if (suggestion_) {
+            showSuggestion(); // in the new placeholder colour
+        }
     }
 }
 
@@ -256,6 +279,9 @@ int CodeEditor::xOfColumn(int line, int column) const {
 // ---- Column selection: state ------------------------------------------------------------
 
 void CodeEditor::setBlockSelection(const block::BlockSelection& selection) {
+    if (suggestion_) {
+        dismissSuggestion();
+    }
     const int last = std::max(0, blockCount() - 1);
     block::BlockSelection s = selection;
     s.anchorLine = std::clamp(s.anchorLine, 0, last);
@@ -494,8 +520,8 @@ bool CodeEditor::handleBlockKey(QKeyEvent* event) {
 }
 
 bool CodeEditor::event(QEvent* event) {
-    // Esc ends the box here, ahead of the window's Cancel shortcut.
-    if (event->type() == QEvent::ShortcutOverride && block_ &&
+    // Esc ends the box or dismisses the suggestion here, ahead of the window's Cancel shortcut.
+    if (event->type() == QEvent::ShortcutOverride && (block_ || suggestion_) &&
         static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
         event->accept();
         return true;
@@ -504,6 +530,21 @@ bool CodeEditor::event(QEvent* event) {
 }
 
 void CodeEditor::keyPressEvent(QKeyEvent* event) {
+    if (suggestion_) {
+        const Qt::KeyboardModifiers mods = event->modifiers() & ~Qt::KeypadModifier;
+        const bool handled = (event->key() == Qt::Key_Tab && mods == Qt::NoModifier && acceptInlineSuggestion()) ||
+                             (event->key() == Qt::Key_Right && mods == Qt::ControlModifier &&
+                              acceptInlineSuggestionWord());
+        if (handled) {
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_Escape && mods == Qt::NoModifier) {
+            dismissSuggestion();
+            event->accept();
+            return;
+        }
+    }
     if (handleBlockKey(event)) {
         event->accept();
         return;
@@ -518,6 +559,9 @@ void CodeEditor::keyPressEvent(QKeyEvent* event) {
 }
 
 void CodeEditor::mousePressEvent(QMouseEvent* event) {
+    if (suggestion_) {
+        dismissSuggestion(); // before QPlainTextEdit commits it as an input method's pre-edit
+    }
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::AltModifier)) {
         const auto [line, column] = lineColumnAt(event->position().toPoint());
         blockDragging_ = true;
@@ -595,9 +639,203 @@ void CodeEditor::contextMenuEvent(QContextMenuEvent* event) {
     delete menu;
 }
 
+// ---- Inline suggestion ------------------------------------------------------------------
+
+void CodeEditor::setInlineSuggestion(const QString& text) {
+    clearInlineSuggestion();
+    QString normalized = text;
+    normalized.remove(u'\r');
+    if (normalized.isEmpty() || isReadOnly() || block_ || textCursor().hasSelection()) {
+        return;
+    }
+    suggestion_ = Suggestion{.anchor = textCursor(), .text = normalized, .consumed = 0};
+    showSuggestion();
+}
+
+void CodeEditor::clearInlineSuggestion() {
+    if (!suggestion_) {
+        return;
+    }
+    hideSuggestion();
+    suggestion_.reset();
+}
+
+QString CodeEditor::inlineSuggestion() const {
+    return suggestion_ ? suggestion_->text : QString();
+}
+
+bool CodeEditor::acceptInlineSuggestion() {
+    return suggestion_ && acceptSuggestionPart(suggestion_->text.size());
+}
+
+bool CodeEditor::acceptInlineSuggestionWord() {
+    return suggestion_ && acceptSuggestionPart(nextSuggestionWordLength(suggestion_->text));
+}
+
+qsizetype CodeEditor::nextSuggestionWordLength(const QString& text) {
+    const auto isBlank = [](QChar c) { return c == u' ' || c == u'\t'; };
+    qsizetype i = 0;
+    if (text.startsWith(u'\n')) {
+        for (i = 1; i < text.size() && isBlank(text[i]); ++i) {
+        }
+        return i;
+    }
+    while (i < text.size() && isBlank(text[i])) {
+        ++i;
+    }
+    if (i < text.size() && isWordChar(text[i])) {
+        while (i < text.size() && isWordChar(text[i])) {
+            ++i;
+        }
+    } else {
+        while (i < text.size() && !isWordChar(text[i]) && !isBlank(text[i]) && text[i] != u'\n') {
+            ++i;
+        }
+    }
+    return i;
+}
+
+QTextCharFormat CodeEditor::suggestionFormat() const {
+    QTextCharFormat format;
+    format.setForeground(palette().color(QPalette::PlaceholderText));
+    format.setProperty(kSuggestionFormatProperty, true);
+    return format;
+}
+
+void CodeEditor::showSuggestion() {
+    const QTextBlock block = suggestion_->anchor.block();
+    QTextLayout* layout = block.layout();
+    QString shown = suggestion_->text;
+    shown.replace(u'\n', QChar::LineSeparator);
+    const int at = suggestion_->anchor.positionInBlock();
+    layout->setPreeditArea(at, shown);
+    QList<QTextLayout::FormatRange> formats = layout->formats();
+    formats.removeIf(isSuggestionFormat);
+    formats.append({at, static_cast<int>(shown.size()), suggestionFormat()});
+    layout->setFormats(formats);
+    document()->markContentsDirty(block.position(), block.length());
+    viewport()->update();
+}
+
+void CodeEditor::hideSuggestion(const QTextBlock& other) {
+    const auto hideIn = [this](const QTextBlock& block) {
+        if (!block.isValid()) {
+            return;
+        }
+        QTextLayout* layout = block.layout();
+        QList<QTextLayout::FormatRange> formats = layout->formats();
+        const bool hadFormat = formats.removeIf(isSuggestionFormat) > 0;
+        const bool hadPreedit = layout->preeditAreaPosition() >= 0;
+        if (!hadFormat && !hadPreedit) {
+            return;
+        }
+        layout->setPreeditArea(-1, QString());
+        layout->setFormats(formats);
+        document()->markContentsDirty(block.position(), block.length());
+    };
+    hideIn(suggestion_->anchor.block());
+    if (other.isValid() && other != suggestion_->anchor.block()) {
+        hideIn(other);
+    }
+    viewport()->update();
+}
+
+void CodeEditor::ensureSuggestionShown() {
+    const QTextBlock block = suggestion_->anchor.block();
+    const QTextLayout* layout = block.layout();
+    const bool hasPreedit = layout->preeditAreaPosition() == suggestion_->anchor.positionInBlock();
+    if (hasPreedit && std::ranges::any_of(layout->formats(), isSuggestionFormat)) {
+        return;
+    }
+    if (!hasPreedit) {
+        // Something else ended the pre-edit (QPlainTextEdit commits an input method's on
+        // some cursor changes) and with it dropped the block's formats: highlight it again.
+        for (QSyntaxHighlighter* highlighter : document()->findChildren<QSyntaxHighlighter*>()) {
+            highlighter->rehighlightBlock(block);
+        }
+    }
+    showSuggestion();
+}
+
+void CodeEditor::dismissSuggestion() {
+    clearInlineSuggestion();
+    emit inlineSuggestionDismissed();
+}
+
+bool CodeEditor::acceptSuggestionPart(qsizetype length) {
+    if (!suggestion_ || length <= 0 || isReadOnly()) {
+        return false;
+    }
+    const QString part = suggestion_->text.left(length);
+    hideSuggestion();
+    editingSuggestion_ = true;
+    QTextCursor cursor = textCursor();
+    cursor.setPosition(suggestion_->anchor.position());
+    cursor.beginEditBlock(); // its own undo step, not merged with typing before it
+    cursor.insertText(part); // moves the anchor past it
+    cursor.endEditBlock();
+    setTextCursor(cursor);
+    ensureCursorVisible();
+    editingSuggestion_ = false;
+
+    suggestion_->text.remove(0, part.size());
+    suggestion_->consumed += part.size();
+    const qsizetype consumed = suggestion_->consumed;
+    const bool complete = suggestion_->text.isEmpty();
+    if (complete) {
+        suggestion_.reset();
+    } else {
+        showSuggestion();
+    }
+    emit inlineSuggestionAccepted(consumed, complete);
+    return true;
+}
+
+void CodeEditor::suggestionContentsChanged(int position, int removed, int added) {
+    hideSuggestion(document()->findBlock(position));
+    // Typed right before the anchor (which moved past it): eat into the suggestion if it
+    // starts with what was typed.
+    if (removed == 0 && added > 0 && position + added == suggestion_->anchor.position()) {
+        QTextCursor typed(document());
+        typed.setPosition(position);
+        typed.setPosition(position + added, QTextCursor::KeepAnchor);
+        const QString text = typed.selectedText().replace(QChar::ParagraphSeparator, u'\n');
+        if (suggestion_->text.startsWith(text)) {
+            suggestion_->text.remove(0, text.size());
+            suggestion_->consumed += text.size();
+            if (suggestion_->text.isEmpty()) {
+                suggestion_.reset(); // typed to its end
+            } else {
+                showSuggestion();
+            }
+            return;
+        }
+    }
+    suggestion_.reset();
+    emit inlineSuggestionDismissed();
+}
+
+void CodeEditor::focusOutEvent(QFocusEvent* event) {
+    if (suggestion_) {
+        dismissSuggestion();
+    }
+    QPlainTextEdit::focusOutEvent(event);
+}
+
+void CodeEditor::inputMethodEvent(QInputMethodEvent* event) {
+    // The input method's own pre-edit text takes the place the suggestion is drawn in.
+    if (suggestion_) {
+        dismissSuggestion();
+    }
+    QPlainTextEdit::inputMethodEvent(event);
+}
+
 // ---- Column selection: painting ---------------------------------------------------------
 
 void CodeEditor::paintEvent(QPaintEvent* event) {
+    if (suggestion_) {
+        ensureSuggestionShown();
+    }
     QPlainTextEdit::paintEvent(event);
     if (!block_) {
         return;

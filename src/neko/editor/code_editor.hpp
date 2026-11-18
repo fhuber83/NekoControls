@@ -4,6 +4,8 @@
 
 #include <QList>
 #include <QPlainTextEdit>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QTextEdit>
 
 #include <optional>
@@ -21,7 +23,8 @@ namespace neko::editor {
 ///   - the font and line wrapping of EditorDefaults, followed live, tabs 4 wide;
 ///   - search highlights for EditorFindBar, layered with the current line;
 ///   - setTextUndoable(), which replaces everything as one undoable edit;
-///   - **column (box) selection**, as in Visual Studio and Notepad++.
+///   - **column (box) selection**, as in Visual Studio and Notepad++;
+///   - an **inline suggestion** ("ghost text") from a completion engine, see below.
 ///
 /// Column selection: Alt + drag with the mouse, or Alt+Shift+arrow keys, select a box
 /// of display columns over several lines -- not running to the ends of the lines.
@@ -86,12 +89,50 @@ public:
     void copyBlock() const;
     void cutBlock();
 
+    // ---- Inline suggestion ("ghost text") -----------------------------------------------
+    //
+    // Text proposed for insertion at the caret, e.g. by a completion engine such as GitHub
+    // Copilot. It is drawn after the caret in the placeholder colour -- the lines of a
+    // multi-line suggestion push the lines below down -- but is not part of the document:
+    // no undo step, no modification, highlighters, Find and toPlainText() don't see it.
+    //
+    //   - Tab accepts all of it, Ctrl+Right the next word (the rest stays); each is one
+    //     undo step.
+    //   - Typing what it starts with eats into it.
+    //   - Esc, any other edit, moving the caret, a click, losing the focus or a column
+    //     selection dismiss it.
+
+    /// Shows `text` (`\n` line breaks) at the caret, replacing any suggestion shown.
+    /// Ignored -- nothing is shown -- while the editor is read-only, has a selection or a
+    /// column selection; an empty `text` clears it. Neither clearing emits a signal.
+    void setInlineSuggestion(const QString& text);
+    void clearInlineSuggestion();
+    [[nodiscard]] bool hasInlineSuggestion() const noexcept { return suggestion_.has_value(); }
+    /// What is still shown (the part not yet typed or accepted).
+    [[nodiscard]] QString inlineSuggestion() const;
+    /// Tab and Ctrl+Right. False without a suggestion.
+    bool acceptInlineSuggestion();
+    bool acceptInlineSuggestionWord();
+    /// The part of `text` that Ctrl+Right accepts: a line break with the indentation after
+    /// it, or leading blanks and then a word (letters, digits, `_`) or a run of other
+    /// characters.
+    [[nodiscard]] static qsizetype nextSuggestionWordLength(const QString& text);
+
     void lineNumberAreaPaintEvent(QPaintEvent* event);
     [[nodiscard]] int lineNumberAreaWidth() const;
 
 signals:
     void lineWrapChanged(bool enabled);
     void overwriteModeChanged(bool overwrite);
+    /// A suggestion was accepted with Tab / Ctrl+Right (or the accept functions).
+    /// `acceptedLength`: how much of the text given to setInlineSuggestion() is now in the
+    /// document, from its start, in UTF-16 code units -- typed or accepted. `complete`: all
+    /// of it; otherwise the rest is still shown.
+    void inlineSuggestionAccepted(qsizetype acceptedLength, bool complete);
+    /// The editor dropped a suggestion that was not completely accepted: Esc, an edit, a
+    /// caret move, a click, focus loss. Not emitted for clearInlineSuggestion() or
+    /// setInlineSuggestion(), nor when the user typed it to its end.
+    void inlineSuggestionDismissed();
 
 protected:
     /// Column-selection keys. True if the key was used; a key that ends the box returns
@@ -112,6 +153,8 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;
     void contextMenuEvent(QContextMenuEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
+    void inputMethodEvent(QInputMethodEvent* event) override;
     bool canInsertFromMimeData(const QMimeData* source) const override;
     void insertFromMimeData(const QMimeData* source) override;
 
@@ -131,6 +174,28 @@ private:
     void applyRowEdits(int firstLine, const std::vector<block::RowEdit>& edits);
     /// Puts the real (invisible) text cursor on the box's moving corner, for scrolling.
     void syncCursorToBlock();
+
+    // Inline suggestion. It is shown as the pre-edit area of its block's QTextLayout (as an
+    // input method's uncommitted text is): laid out with the line, line breaks as
+    // QChar::LineSeparator, so it takes up room without being in the document.
+    struct Suggestion {
+        QTextCursor anchor; ///< where it is inserted; moves with edits before it
+        QString text;       ///< what is still shown
+        qsizetype consumed = 0; ///< how much of the original text is in the document
+    };
+    void showSuggestion();
+    /// Removes the pre-edit area and its format from the anchor's block and from `other`
+    /// (the block an edit happened in, which may have held it before the edit).
+    void hideSuggestion(const QTextBlock& other = {});
+    /// Puts the format back if a highlighter replaced the block's formats.
+    void ensureSuggestionShown();
+    void dismissSuggestion();
+    bool acceptSuggestionPart(qsizetype length);
+    void suggestionContentsChanged(int position, int removed, int added);
+    [[nodiscard]] QTextCharFormat suggestionFormat() const;
+
+    std::optional<Suggestion> suggestion_;
+    bool editingSuggestion_ = false; ///< our own accept edit, not one that dismisses it
 
     QWidget* lineNumberArea_ = nullptr;
     QAction* lineWrapAct_ = nullptr;

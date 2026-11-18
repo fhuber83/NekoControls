@@ -7,7 +7,7 @@ files, nothing of an application. C++23, MIT license. Part of
 
 | Class | What it is |
 |---|---|
-| `CodeEditor` | A `QPlainTextEdit` with a line-number gutter, current-line highlight, column (box) selection (Alt + drag, Alt+Shift+arrows), a line-wrap toggle (Alt+Z), overwrite mode with a signal, and an undoable whole-text replace |
+| `CodeEditor` | A `QPlainTextEdit` with a line-number gutter, current-line highlight, column (box) selection (Alt + drag, Alt+Shift+arrows), a line-wrap toggle (Alt+Z), overwrite mode with a signal, an undoable whole-text replace, and inline suggestions ("ghost text": Tab accepts, Ctrl+Right the next word, Esc dismisses) |
 | `EditorFindBar` | Find / Replace for a `CodeEditor` or any `QPlainTextEdit`: Ctrl+F / Ctrl+H, F3, match case, whole word, regular expressions with `$1`, highlighted matches, undoable Replace All |
 | `MarkdownEditor` | A `CodeEditor` with a GitHub emoji picker (`:` opens it, typing narrows it) and link completion: with a `MarkdownLinkTargetProvider` set, Ctrl+Space in `[text](` lists the files the application offers, and `#` after one its headings |
 | `MarkdownHighlighter` | A dependency-free `QSyntaxHighlighter` for Markdown, light or dark |
@@ -61,6 +61,27 @@ findBar->installShortcuts(pane);       // Ctrl+F, Ctrl+H, F3 while the focus is 
 
 Syntax highlighting is not part of `CodeEditor`: attach any `QSyntaxHighlighter` to
 `editor->document()`.
+
+### Inline suggestions
+
+`CodeEditor` shows text proposed by a completion engine (GitHub Copilot, a snippet
+engine, ...) after the caret in the placeholder colour. The engine stays in the
+application; the editor only shows, accepts and dismisses:
+
+```cpp
+editor->setInlineSuggestion(QStringLiteral("a + b;\n}"));   // at the caret
+connect(editor, &ed::CodeEditor::inlineSuggestionAccepted, [](qsizetype length, bool complete) {
+    // `length`: how much of the suggestion is now in the document, from its start
+});
+connect(editor, &ed::CodeEditor::inlineSuggestionDismissed, [] { /* ... */ });
+```
+
+The suggestion is not part of the document (no undo step, not modified, invisible to
+highlighters and Find); the lines of a multi-line one push the lines below down. Tab
+accepts it, Ctrl+Right its next word, each as one undo step; typing what it starts with
+eats into it; Esc, other edits, caret moves, clicks and focus loss dismiss it. It is
+drawn as the pre-edit area of the line's `QTextLayout`, so an input method's own pre-edit
+text dismisses it.
 
 ## What the application provides
 

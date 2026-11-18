@@ -59,3 +59,4 @@ compile_commands.json
 # Local tooling
 .cache/
 cmake-build-*/
+build.claude/
