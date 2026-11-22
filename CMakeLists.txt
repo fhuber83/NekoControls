@@ -23,7 +23,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(NekoControls
-    VERSION 0.5.0
+    VERSION 0.6.0
     DESCRIPTION "Qt Widgets controls of the Neko applications"
     LANGUAGES CXX
 )
