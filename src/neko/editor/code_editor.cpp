@@ -131,14 +131,25 @@ bool CodeEditor::replaceDocument(QTextDocument* document) {
     // editor's children go too: that is how an application hands documents over.
     QTextDocument* const old = this->document();
     const bool oldIsOurs = old->parent() == this;
+    // The gutter first, sized for the new line count: a wider gutter narrows the viewport,
+    // and a narrower viewport lays the document out again -- the old, small one now rather
+    // than the new one after the swap (~200 ms for a million lines).
+    setViewportMargins(lineNumberAreaWidthFor(document->blockCount()), 0, 0, 0);
     setDocument(document);
     if (oldIsOurs) {
         delete old; // with its children: a highlighter, say
     }
     // QPlainTextEdit::setDocument carries the wrap mode over, not the font or the tab stops:
-    // those are the document's own options.
-    document->setDefaultFont(font());
-    setTabStopDistance(fontMetrics().horizontalAdvance(QLatin1Char(' ')) * kTabWidth);
+    // those are the document's own options. Each change lays the whole document out again
+    // (~90 ms for 10 MiB), so only what differs -- a document built with the editor's
+    // options needs neither.
+    if (document->defaultFont() != font()) {
+        document->setDefaultFont(font());
+    }
+    const qreal tabStop = fontMetrics().horizontalAdvance(QLatin1Char(' ')) * kTabWidth;
+    if (document->defaultTextOption().tabStopDistance() != tabStop) {
+        setTabStopDistance(tabStop);
+    }
 
     connectDocument();
     updateLineNumberAreaWidth();
@@ -205,8 +216,12 @@ void CodeEditor::highlightCurrentLine() {
 // ---- Gutter -----------------------------------------------------------------------------
 
 int CodeEditor::lineNumberAreaWidth() const {
+    return lineNumberAreaWidthFor(blockCount());
+}
+
+int CodeEditor::lineNumberAreaWidthFor(int lines) const {
     int digits = 1;
-    int maxBlocks = qMax(1, blockCount());
+    int maxBlocks = qMax(1, lines);
     while (maxBlocks >= 10) {
         maxBlocks /= 10;
         ++digits;

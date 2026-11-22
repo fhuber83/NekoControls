@@ -92,9 +92,15 @@ tab width and the Find bar working on the new document -- `QPlainTextEdit::setDo
 alone would leave them on the old one:
 
 ```cpp
+// UI thread: what the document should look like in this editor
+const QFont font = editor->font();
+const QTextOption options = editor->document()->defaultTextOption();   // tabs, wrapping
+
 // worker thread
 auto* doc = new QTextDocument;
 doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
+doc->setDefaultFont(font);         // with the editor's options the swap lays it out once,
+doc->setDefaultTextOption(options); // not three times
 doc->setPlainText(text);
 doc->moveToThread(editor->thread());
 

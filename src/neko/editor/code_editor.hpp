@@ -66,12 +66,21 @@ public:
     /// line), and a QTextDocument may be built in any thread. Build it on a worker, give it
     /// a QPlainTextDocumentLayout there, moveToThread() this one, and hand it over here:
     ///
+    ///     const QFont font = editor->font();                     // UI thread
+    ///     const QTextOption options = editor->document()->defaultTextOption();
+    ///     ...
     ///     auto* doc = new QTextDocument;                         // worker thread
     ///     doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
+    ///     doc->setDefaultFont(font);
+    ///     doc->setDefaultTextOption(options);
     ///     doc->setPlainText(text);
     ///     doc->moveToThread(editorThread);
     ///     ...
     ///     editor->replaceDocument(doc);                          // UI thread
+    ///
+    /// Giving the document the editor's font and text options before the text goes in (as
+    /// above) makes the swap cost one layout of the document instead of three: the editor
+    /// sets them here only where they differ, and each change lays everything out again.
     ///
     /// `document` must live in this editor's thread and have a QPlainTextDocumentLayout;
     /// otherwise nothing changes and this returns false. Ownership: the editor deletes the
@@ -190,6 +199,7 @@ private:
     /// inline suggestion.
     void connectDocument();
     void updateLineNumberAreaWidth();
+    [[nodiscard]] int lineNumberAreaWidthFor(int lines) const;
     void updateLineNumberArea(const QRect& rect, int dy);
     void highlightCurrentLine();
 
