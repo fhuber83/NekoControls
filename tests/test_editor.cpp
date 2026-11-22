@@ -1473,6 +1473,26 @@ private slots:
         QTextCursor(built).insertText(QStringLiteral("x"));
         QVERIFY(!editor->hasBlockSelection());
 
+        // A replaced child of the editor is deleted (QPlainTextEdit alone would keep it), with
+        // its own children; a document someone else owns is not.
+        QPointer<QTextDocument> child = built;
+        auto* next = new QTextDocument(editor);
+        next->setDocumentLayout(new QPlainTextDocumentLayout(next));
+        next->setPlainText(QStringLiteral("next"));
+        QPointer<QObject> grandchild = new QObject(next);
+        QVERIFY(editor->replaceDocument(next));
+        QVERIFY(child.isNull());
+        QTextDocument foreign;
+        foreign.setDocumentLayout(new QPlainTextDocumentLayout(&foreign));
+        foreign.setPlainText(QStringLiteral("alpha"));
+        QVERIFY(editor->replaceDocument(&foreign));
+        QVERIFY(grandchild.isNull()); // `next` went, with its children
+        built = new QTextDocument(editor);
+        built->setDocumentLayout(new QPlainTextDocumentLayout(built));
+        built->setPlainText(QStringLiteral("alpha alpha\nalpha"));
+        QVERIFY(editor->replaceDocument(built)); // `foreign` stays its owner's (the stack)
+        QCOMPARE(foreign.toPlainText(), QStringLiteral("alpha"));
+
         // The inline suggestion follows the new document too: an edit elsewhere ends it.
         QTextCursor caret(built);
         caret.movePosition(QTextCursor::End);

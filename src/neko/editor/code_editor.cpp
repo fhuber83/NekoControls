@@ -126,7 +126,15 @@ bool CodeEditor::replaceDocument(QTextDocument* document) {
     // cursors. Drop them first.
     setExtraSelections({});
 
+    // QPlainTextEdit deletes a replaced document only if it is its internal control's (the
+    // editor's first one); one parented to the editor itself would be left behind. The
+    // editor's children go too: that is how an application hands documents over.
+    QTextDocument* const old = this->document();
+    const bool oldIsOurs = old->parent() == this;
     setDocument(document);
+    if (oldIsOurs) {
+        delete old; // with its children: a highlighter, say
+    }
     // QPlainTextEdit::setDocument carries the wrap mode over, not the font or the tab stops:
     // those are the document's own options.
     document->setDefaultFont(font());

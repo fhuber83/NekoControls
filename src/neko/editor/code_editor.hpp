@@ -74,10 +74,11 @@ public:
     ///     editor->replaceDocument(doc);                          // UI thread
     ///
     /// `document` must live in this editor's thread and have a QPlainTextDocumentLayout;
-    /// otherwise nothing changes and this returns false. Ownership is QPlainTextEdit's:
-    /// the editor deletes the document it replaces only if it was the editor's own (the
-    /// one it started with), and never takes ownership of `document` (parent it to the
-    /// editor to tie their lifetimes). Emits documentReplaced().
+    /// otherwise nothing changes and this returns false. Ownership: the editor deletes the
+    /// document it replaces if that was its own (the one it started with) or its child --
+    /// so parent `document` to the editor to have it deleted when the next one replaces it
+    /// (QPlainTextEdit::setDocument() alone would leave such a child behind). It never
+    /// takes ownership otherwise. Emits documentReplaced().
     bool replaceDocument(QTextDocument* document);
 
     /// The Find bar's match highlights, drawn together with the current-line highlight
