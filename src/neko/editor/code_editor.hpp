@@ -56,6 +56,30 @@ public:
     /// brings back what was there.
     void setTextUndoable(const QString& text);
 
+    /// Shows `document` instead of the current one, and keeps everything that follows the
+    /// document working on it: column selection, the inline suggestion, the tab width,
+    /// the search highlights (dropped: they belong to the old text) and an EditorFindBar on
+    /// this editor (it re-connects on documentReplaced()). Use this rather than
+    /// QPlainTextEdit::setDocument(), which leaves those connected to the old document.
+    ///
+    /// What it is for: a large text is expensive to put into a QTextDocument (a block per
+    /// line), and a QTextDocument may be built in any thread. Build it on a worker, give it
+    /// a QPlainTextDocumentLayout there, moveToThread() this one, and hand it over here:
+    ///
+    ///     auto* doc = new QTextDocument;                         // worker thread
+    ///     doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
+    ///     doc->setPlainText(text);
+    ///     doc->moveToThread(editorThread);
+    ///     ...
+    ///     editor->replaceDocument(doc);                          // UI thread
+    ///
+    /// `document` must live in this editor's thread and have a QPlainTextDocumentLayout;
+    /// otherwise nothing changes and this returns false. Ownership is QPlainTextEdit's:
+    /// the editor deletes the document it replaces only if it was the editor's own (the
+    /// one it started with), and never takes ownership of `document` (parent it to the
+    /// editor to tie their lifetimes). Emits documentReplaced().
+    bool replaceDocument(QTextDocument* document);
+
     /// The Find bar's match highlights, drawn together with the current-line highlight
     /// (both are extra selections; setting them directly would drop the other).
     void setSearchHighlights(const QList<QTextEdit::ExtraSelection>& highlights);
@@ -133,6 +157,8 @@ signals:
     /// caret move, a click, focus loss. Not emitted for clearInlineSuggestion() or
     /// setInlineSuggestion(), nor when the user typed it to its end.
     void inlineSuggestionDismissed();
+    /// replaceDocument() put a new document in: whoever follows document() re-connects.
+    void documentReplaced();
 
 protected:
     /// Column-selection keys. True if the key was used; a key that ends the box returns
@@ -159,6 +185,9 @@ protected:
     void insertFromMimeData(const QMimeData* source) override;
 
 private:
+    /// Follows edits of document(): they end a column selection and may dismiss the
+    /// inline suggestion.
+    void connectDocument();
     void updateLineNumberAreaWidth();
     void updateLineNumberArea(const QRect& rect, int dy);
     void highlightCurrentLine();
@@ -179,8 +208,8 @@ private:
     // input method's uncommitted text is): laid out with the line, line breaks as
     // QChar::LineSeparator, so it takes up room without being in the document.
     struct Suggestion {
-        QTextCursor anchor; ///< where it is inserted; moves with edits before it
-        QString text;       ///< what is still shown
+        QTextCursor anchor;     ///< where it is inserted; moves with edits before it
+        QString text;           ///< what is still shown
         qsizetype consumed = 0; ///< how much of the original text is in the document
     };
     void showSuggestion();
@@ -197,6 +226,7 @@ private:
     std::optional<Suggestion> suggestion_;
     bool editingSuggestion_ = false; ///< our own accept edit, not one that dismisses it
 
+    QMetaObject::Connection documentConnection_;
     QWidget* lineNumberArea_ = nullptr;
     QAction* lineWrapAct_ = nullptr;
     QList<QTextEdit::ExtraSelection> searchHighlights_;

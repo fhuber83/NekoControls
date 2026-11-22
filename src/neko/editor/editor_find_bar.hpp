@@ -61,6 +61,13 @@ public:
     /// Replaces every match as one undoable edit; returns how many.
     int replaceAll();
 
+    /// The editor shows another document now (QPlainTextEdit::setDocument): follow its
+    /// edits, and search it again if the bar is open. A CodeEditor's replaceDocument()
+    /// calls this by itself; on any other editor, clear its extra selections
+    /// (setExtraSelections({})) before setDocument() -- they point into the old document,
+    /// which setDocument() may delete -- and call this after.
+    void editorDocumentChanged();
+
     [[nodiscard]] QLineEdit* findField() const noexcept { return findEdit_; }
     [[nodiscard]] QLineEdit* replaceField() const noexcept { return replaceEdit_; }
     [[nodiscard]] bool isReplaceMode() const noexcept { return replaceMode_; }
@@ -76,6 +83,8 @@ protected:
 
 private:
     void open(bool replace);
+    /// Matches follow edits of the editor's document while the bar is open.
+    void connectDocument();
     /// Searches again and repaints the highlights; with `selectFromAnchor`, also
     /// selects the first match at or after where the search started (typing).
     void research(bool selectFromAnchor);
@@ -85,6 +94,7 @@ private:
     [[nodiscard]] int selectedMatchIndex() const;
 
     QPlainTextEdit* editor_ = nullptr;
+    QMetaObject::Connection documentConnection_;
     Highlighter highlighter_;
     QLineEdit* findEdit_ = nullptr;
     QLineEdit* replaceEdit_ = nullptr;

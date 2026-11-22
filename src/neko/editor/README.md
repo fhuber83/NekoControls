@@ -7,7 +7,7 @@ files, nothing of an application. C++23, MIT license. Part of
 
 | Class | What it is |
 |---|---|
-| `CodeEditor` | A `QPlainTextEdit` with a line-number gutter, current-line highlight, column (box) selection (Alt + drag, Alt+Shift+arrows), a line-wrap toggle (Alt+Z), overwrite mode with a signal, an undoable whole-text replace, and inline suggestions ("ghost text": Tab accepts, Ctrl+Right the next word, Esc dismisses) |
+| `CodeEditor` | A `QPlainTextEdit` with a line-number gutter, current-line highlight, column (box) selection (Alt + drag, Alt+Shift+arrows), a line-wrap toggle (Alt+Z), overwrite mode with a signal, an undoable whole-text replace, a document swap for texts built on another thread (`replaceDocument`), and inline suggestions ("ghost text": Tab accepts, Ctrl+Right the next word, Esc dismisses) |
 | `EditorFindBar` | Find / Replace for a `CodeEditor` or any `QPlainTextEdit`: Ctrl+F / Ctrl+H, F3, match case, whole word, regular expressions with `$1`, highlighted matches, undoable Replace All |
 | `MarkdownEditor` | A `CodeEditor` with a GitHub emoji picker (`:` opens it, typing narrows it) and link completion: with a `MarkdownLinkTargetProvider` set, Ctrl+Space in `[text](` lists the files the application offers, and `#` after one its headings |
 | `MarkdownHighlighter` | A dependency-free `QSyntaxHighlighter` for Markdown, light or dark |
@@ -82,6 +82,31 @@ accepts it, Ctrl+Right its next word, each as one undo step; typing what it star
 eats into it; Esc, other edits, caret moves, clicks and focus loss dismiss it. It is
 drawn as the pre-edit area of the line's `QTextLayout`, so an input method's own pre-edit
 text dismisses it.
+
+### Large texts: build the document elsewhere
+
+Putting a large text into a `QTextDocument` costs (a block per line: about 25 ms per MiB),
+and a `QTextDocument` may be filled in any thread. Build it on a worker and hand it to the
+editor with `replaceDocument()`, which keeps column selection, the inline suggestion, the
+tab width and the Find bar working on the new document -- `QPlainTextEdit::setDocument()`
+alone would leave them on the old one:
+
+```cpp
+// worker thread
+auto* doc = new QTextDocument;
+doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
+doc->setPlainText(text);
+doc->moveToThread(editor->thread());
+
+// UI thread
+doc->setParent(editor);            // the editor deletes it when it is replaced in turn
+editor->replaceDocument(doc);      // emits documentReplaced()
+```
+
+A highlighter may be attached and run (`rehighlight()`) on the worker too, as the
+document's child; it moves with it. An `EditorFindBar` on a `CodeEditor` follows by itself;
+on a plain `QPlainTextEdit`, call `EditorFindBar::editorDocumentChanged()` after
+`setDocument()`.
 
 ## What the application provides
 

@@ -33,7 +33,9 @@
 #include <QLineEdit>
 #include <QMimeData>
 #include <QPixmap>
+#include <QPlainTextDocumentLayout>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScopeGuard>
@@ -46,6 +48,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextLayout>
+#include <QThread>
 #include <QToolButton>
 #include <QTranslator>
 #include <QVBoxLayout>
@@ -1116,8 +1119,12 @@ private slots:
             c.setPosition(c.block().position() + index);
             editor->setTextCursor(c);
         };
-        const auto block = [editor](int line) { return editor->document()->findBlockByNumber(line); };
-        const auto blockTop = [editor, &block](int line) { return editor->cursorRect(QTextCursor(block(line))).top(); };
+        const auto block = [editor](int line) {
+            return editor->document()->findBlockByNumber(line);
+        };
+        const auto blockTop = [editor, &block](int line) {
+            return editor->cursorRect(QTextCursor(block(line))).top();
+        };
         const auto ghostFormats = [&block](int line) {
             const auto formats = block(line).layout()->formats();
             return std::ranges::count_if(formats, [](const QTextLayout::FormatRange& r) {
@@ -1392,6 +1399,110 @@ private slots:
     }
 
     // The library carries its own translations; the application picks the language.
+    /// replaceDocument(): a document built on another thread is shown, the editor's font,
+    /// tab width and wrapping apply to it, column selection and the inline suggestion follow
+    /// its edits (and no longer the old document's), the Find bar searches it.
+    void testCodeEditorReplaceDocument() {
+        QWidget window;
+        auto* layout = new QVBoxLayout(&window);
+        auto* editor = new ed::CodeEditor(&window);
+        auto* bar = new ed::EditorFindBar(
+            editor, [editor](const QList<QTextEdit::ExtraSelection>& h) { editor->setSearchHighlights(h); }, &window);
+        layout->addWidget(editor, 1);
+        layout->addWidget(bar);
+        window.resize(900, 600);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        editor->setLineWrapEnabled(false);
+        editor->setPlainText(QStringLiteral("old alpha"));
+        QPointer<QTextDocument> original = editor->document();
+        bar->openFind();
+        bar->findField()->setText(QStringLiteral("alpha"));
+        QTRY_COMPARE(bar->matchCount(), 1);
+
+        // Refused: no plain-text layout, another thread, null, the same document.
+        QTextDocument rich;
+        (void)rich.documentLayout(); // the rich-text layout QTextDocument makes by itself
+        QVERIFY(!editor->replaceDocument(&rich));
+        QVERIFY(!editor->replaceDocument(nullptr));
+        QVERIFY(!editor->replaceDocument(editor->document()));
+        QThread elsewhere;
+        QTextDocument stranger;
+        stranger.setDocumentLayout(new QPlainTextDocumentLayout(&stranger));
+        stranger.moveToThread(&elsewhere);
+        QVERIFY(!editor->replaceDocument(&stranger));
+        stranger.moveToThread(QThread::currentThread());
+        QCOMPARE(editor->document(), original.data());
+
+        // Built on a worker, as an application loading a large file would.
+        QTextDocument* built = nullptr;
+        QThread* worker = QThread::create([&built, target = QThread::currentThread()] {
+            auto* doc = new QTextDocument;
+            doc->setDocumentLayout(new QPlainTextDocumentLayout(doc));
+            doc->setPlainText(QStringLiteral("alpha\tbeta alpha\nsecond line\nthird alpha"));
+            doc->moveToThread(target);
+            built = doc;
+        });
+        worker->start();
+        QVERIFY(worker->wait(5000));
+        delete worker;
+        QVERIFY(built);
+        built->setParent(editor);
+        QSignalSpy replaced(editor, &ed::CodeEditor::documentReplaced);
+        QVERIFY(editor->replaceDocument(built));
+        QCOMPARE(replaced.count(), 1);
+        QCOMPARE(editor->document(), built);
+        QCOMPARE(editor->toPlainText(), QStringLiteral("alpha\tbeta alpha\nsecond line\nthird alpha"));
+        QVERIFY(original.isNull()); // the editor's own first document is gone
+        QCOMPARE(built->defaultFont(), editor->font());
+        const qreal tab = editor->fontMetrics().horizontalAdvance(QLatin1Char(' ')) * ed::CodeEditor::kTabWidth;
+        QCOMPARE(built->defaultTextOption().tabStopDistance(), tab);
+        QCOMPARE(built->defaultTextOption().wrapMode(), QTextOption::NoWrap);
+        QCOMPARE(editor->document()->blockCount(), 3);
+
+        // The Find bar searched the new text and follows its edits.
+        QCOMPARE(bar->matchCount(), 3);
+        QTextCursor end(built);
+        end.movePosition(QTextCursor::End);
+        end.insertText(QStringLiteral(" alpha"));
+        QTRY_COMPARE(bar->matchCount(), 4);
+
+        // Column selection ends on an edit of the new document from elsewhere.
+        editor->setBlockSelection(ed::block::BlockSelection{0, 0, 1, 3});
+        QVERIFY(editor->hasBlockSelection());
+        QTextCursor(built).insertText(QStringLiteral("x"));
+        QVERIFY(!editor->hasBlockSelection());
+
+        // The inline suggestion follows the new document too: an edit elsewhere ends it.
+        QTextCursor caret(built);
+        caret.movePosition(QTextCursor::End);
+        editor->setTextCursor(caret);
+        editor->setInlineSuggestion(QStringLiteral("suggested"));
+        QVERIFY(editor->hasInlineSuggestion());
+        QSignalSpy dismissed(editor, &ed::CodeEditor::inlineSuggestionDismissed);
+        QTextCursor(built).insertText(QStringLiteral("y"));
+        QCOMPARE(dismissed.count(), 1);
+        QVERIFY(!editor->hasInlineSuggestion());
+
+        // A plain QPlainTextEdit's bar re-connects when told to.
+        QPlainTextEdit plain;
+        ed::EditorFindBar plainBar(
+            &plain, [&plain](const QList<QTextEdit::ExtraSelection>& h) { plain.setExtraSelections(h); });
+        plain.setPlainText(QStringLiteral("one"));
+        plainBar.show();
+        plainBar.findField()->setText(QStringLiteral("two"));
+        QTRY_COMPARE(plainBar.matchCount(), 0);
+        auto* other = new QTextDocument(&plain);
+        other->setDocumentLayout(new QPlainTextDocumentLayout(other));
+        other->setPlainText(QStringLiteral("two two"));
+        plain.setExtraSelections({}); // the old highlights point into the old document
+        plain.setDocument(other);
+        plainBar.editorDocumentChanged();
+        QCOMPARE(plainBar.matchCount(), 2);
+        QTextCursor(other).insertText(QStringLiteral("two "));
+        QTRY_COMPARE(plainBar.matchCount(), 3);
+    }
+
     void testEditorTranslations() {
         QCOMPARE(
             ed::editorTranslationLanguages(),

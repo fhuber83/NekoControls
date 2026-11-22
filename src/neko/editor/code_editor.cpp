@@ -12,8 +12,9 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPainter>
-#include <QSyntaxHighlighter>
+#include <QPlainTextDocumentLayout>
 #include <QSignalBlocker>
+#include <QSyntaxHighlighter>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -91,16 +92,51 @@ CodeEditor::CodeEditor(QWidget* parent)
             dismissSuggestion();
         }
     });
-    connect(document(), &QTextDocument::contentsChange, this, [this](int position, int removed, int added) {
-        if (block_ && !applyingBlockEdit_) {
-            clearBlockSelection(); // edited elsewhere, undo included: the box no longer fits
-        }
-        if (suggestion_ && !editingSuggestion_) {
-            suggestionContentsChanged(position, removed, added);
-        }
-    });
+    connectDocument();
     updateLineNumberAreaWidth();
     highlightCurrentLine();
+}
+
+void CodeEditor::connectDocument() {
+    disconnect(documentConnection_);
+    documentConnection_ =
+        connect(document(), &QTextDocument::contentsChange, this, [this](int position, int removed, int added) {
+            if (block_ && !applyingBlockEdit_) {
+                clearBlockSelection(); // edited elsewhere, undo included: the box no longer fits
+            }
+            if (suggestion_ && !editingSuggestion_) {
+                suggestionContentsChanged(position, removed, added);
+            }
+        });
+}
+
+bool CodeEditor::replaceDocument(QTextDocument* document) {
+    if (!document || document == this->document() || document->thread() != thread() ||
+        !qobject_cast<QPlainTextDocumentLayout*>(document->documentLayout())) {
+        return false;
+    }
+    // What points into the old text goes with it.
+    clearInlineSuggestion();
+    clearBlockSelection();
+    searchHighlights_.clear();
+    disconnect(documentConnection_);
+    // The extra selections (current line, search highlights) hold cursors into the old
+    // document, which setDocument() may delete -- and then emits cursorPositionChanged,
+    // whose highlightCurrentLine() would make QWidgetTextControl measure those stale
+    // cursors. Drop them first.
+    setExtraSelections({});
+
+    setDocument(document);
+    // QPlainTextEdit::setDocument carries the wrap mode over, not the font or the tab stops:
+    // those are the document's own options.
+    document->setDefaultFont(font());
+    setTabStopDistance(fontMetrics().horizontalAdvance(QLatin1Char(' ')) * kTabWidth);
+
+    connectDocument();
+    updateLineNumberAreaWidth();
+    highlightCurrentLine();
+    emit documentReplaced();
+    return true;
 }
 
 void CodeEditor::setTextUndoable(const QString& text) {
@@ -532,9 +568,9 @@ bool CodeEditor::event(QEvent* event) {
 void CodeEditor::keyPressEvent(QKeyEvent* event) {
     if (suggestion_) {
         const Qt::KeyboardModifiers mods = event->modifiers() & ~Qt::KeypadModifier;
-        const bool handled = (event->key() == Qt::Key_Tab && mods == Qt::NoModifier && acceptInlineSuggestion()) ||
-                             (event->key() == Qt::Key_Right && mods == Qt::ControlModifier &&
-                              acceptInlineSuggestionWord());
+        const bool handled =
+            (event->key() == Qt::Key_Tab && mods == Qt::NoModifier && acceptInlineSuggestion()) ||
+            (event->key() == Qt::Key_Right && mods == Qt::ControlModifier && acceptInlineSuggestionWord());
         if (handled) {
             event->accept();
             return;
@@ -673,7 +709,9 @@ bool CodeEditor::acceptInlineSuggestionWord() {
 }
 
 qsizetype CodeEditor::nextSuggestionWordLength(const QString& text) {
-    const auto isBlank = [](QChar c) { return c == u' ' || c == u'\t'; };
+    const auto isBlank = [](QChar c) {
+        return c == u' ' || c == u'\t';
+    };
     qsizetype i = 0;
     if (text.startsWith(u'\n')) {
         for (i = 1; i < text.size() && isBlank(text[i]); ++i) {

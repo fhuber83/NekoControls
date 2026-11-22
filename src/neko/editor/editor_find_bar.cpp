@@ -1,5 +1,6 @@
 #include "neko/editor/editor_find_bar.hpp"
 
+#include "neko/editor/code_editor.hpp"
 #include "neko/editor/editor_icons.hpp"
 
 #include <QGridLayout>
@@ -116,14 +117,35 @@ EditorFindBar::EditorFindBar(QPlainTextEdit* editor, Highlighter highlighter, QW
     connect(closeBtn, &QToolButton::clicked, this, &EditorFindBar::closeBar);
     connect(replaceBtn_, &QToolButton::clicked, this, &EditorFindBar::replaceCurrent);
     connect(replaceAllBtn_, &QToolButton::clicked, this, [this] { (void)replaceAll(); });
+    connectDocument();
+    if (auto* code = qobject_cast<CodeEditor*>(editor_)) {
+        connect(code, &CodeEditor::documentReplaced, this, &EditorFindBar::editorDocumentChanged);
+    }
+
+    setVisible(false);
+}
+
+void EditorFindBar::connectDocument() {
+    disconnect(documentConnection_);
     // Edits while the bar is open: the matches follow, the selection stays.
-    connect(editor_->document(), &QTextDocument::contentsChanged, this, [this] {
+    documentConnection_ = connect(editor_->document(), &QTextDocument::contentsChanged, this, [this] {
         if (isVisible()) {
             researchTimer_->start();
         }
     });
+}
 
-    setVisible(false);
+void EditorFindBar::editorDocumentChanged() {
+    connectDocument();
+    researchTimer_->stop();
+    matches_.clear();
+    note_.clear();
+    anchor_ = 0;
+    if (isVisible()) {
+        research(false);
+    } else if (highlighter_) {
+        highlighter_({});
+    }
 }
 
 void EditorFindBar::installShortcuts(QWidget* scope) {
